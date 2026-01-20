@@ -1,0 +1,502 @@
+/* Phase 4: Updated Styles */
+
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --color-primary: #8B0000;
+  --color-primary-dark: #5C0000;
+  --color-gold: #D4AF37;
+  --color-gold-light: #FFD700;
+  --color-cream: #FFF8DC;
+  --color-brown: #4A3728;
+  --color-white: #FFFFFF;
+  --color-error: #DC3545;
+  --color-gray: #666666;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+html, body {
+  font-family: var(--font-sans);
+  background: linear-gradient(135deg, var(--color-cream) 0%, #FFE4B5 100%);
+  min-height: 100vh;
+  color: var(--color-brown);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================================================================
+   INPUT SCREEN
+   ============================================================================ */
+
+.input-screen {
+  flex: 1;
+  padding: 20px;
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.header {
+  text-align: center;
+  padding: 20px 0 30px;
+}
+
+.header h1 {
+  font-size: 28px;
+  color: var(--color-primary);
+  margin-bottom: 8px;
+}
+
+.header p {
+  font-size: 14px;
+  color: var(--color-brown);
+  opacity: 0.8;
+}
+
+.error-banner {
+  background: var(--color-error);
+  color: var(--color-white);
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Form row for side-by-side inputs */
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.form-row .form-group {
+  flex: 1;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-brown);
+}
+
+.form-group input[type="text"],
+.form-group input[type="date"] {
+  padding: 14px 16px;
+  border: 2px solid #DDD;
+  border-radius: 10px;
+  font-size: 16px;
+  transition: border-color 0.2s;
+  background: var(--color-white);
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="date"]:focus {
+  outline: none;
+  border-color: var(--color-gold);
+}
+
+/* Date preview text */
+.date-preview {
+  font-size: 13px;
+  color: var(--color-gray);
+  margin-top: 4px;
+}
+
+/* ============================================================================
+   PHOTO UPLOAD - PHASE 4 NEW DESIGN
+   ============================================================================ */
+
+/* Empty state - large upload button */
+.photo-upload-empty {
+  width: 100%;
+}
+
+.upload-btn {
+  padding: 14px;
+  background: var(--color-white);
+  border: 2px dashed var(--color-gold);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--color-brown);
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.upload-btn:hover {
+  background: var(--color-cream);
+  border-style: solid;
+}
+
+.upload-btn-large {
+  padding: 30px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-icon {
+  font-size: 32px;
+  color: var(--color-gold);
+  font-weight: 300;
+}
+
+.upload-text {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-brown);
+}
+
+.upload-hint {
+  font-size: 12px;
+  color: var(--color-gray);
+}
+
+/* Single photo display */
+.photo-single {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.photo-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.photo-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-gray);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.photo-preview {
+  width: 140px;
+  height: 140px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid var(--color-gold);
+}
+
+.photo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Two photos with swap button */
+.photo-dual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.photo-pair {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Swap button */
+.swap-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--color-gold);
+  background: var(--color-white);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.swap-btn:hover {
+  background: var(--color-gold);
+}
+
+.swap-btn:hover .swap-icon {
+  color: var(--color-white);
+}
+
+.swap-icon {
+  font-size: 20px;
+  color: var(--color-gold);
+  transition: color 0.2s;
+}
+
+/* Change photos button */
+.change-photos-btn {
+  padding: 10px 20px;
+  background: transparent;
+  border: 1px solid var(--color-gray);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--color-gray);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.change-photos-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Generate button */
+.generate-btn {
+  margin-top: 10px;
+  padding: 18px;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: var(--color-white);
+  border: none;
+  border-radius: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+}
+
+.generate-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(139, 0, 0, 0.3);
+}
+
+.generate-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.generate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   LOADING SCREEN - PHASE 4 UPDATES
+   ============================================================================ */
+
+.loading-screen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  text-align: center;
+}
+
+.loading-content {
+  max-width: 360px;
+  width: 100%;
+}
+
+.loading-text {
+  font-size: 24px;
+  color: var(--color-primary);
+  line-height: 1.4;
+  margin-bottom: 24px;
+}
+
+/* Phase 4: Larger mascot container */
+.mascot-container {
+  margin-bottom: 24px;
+}
+
+.mascot-container-large {
+  margin-bottom: 32px;
+}
+
+/* Phase 4: Mascot 1.6× larger (200px → 320px) */
+.mascot {
+  max-width: 200px;
+  max-height: 200px;
+  animation: bounce 2s infinite;
+}
+
+.mascot-large {
+  max-width: 320px;
+  max-height: 320px;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.progress-container {
+  margin-bottom: 20px;
+}
+
+.progress-bar {
+  height: 12px;
+  background: rgba(139, 0, 0, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary) 0%, var(--color-gold) 100%);
+  border-radius: 6px;
+  transition: width 0.75s ease-out; /* Slightly slower transition for Phase 4 */
+}
+
+.progress-text {
+  font-size: 14px;
+  color: var(--color-brown);
+  font-weight: 500;
+}
+
+.loading-subtext {
+  font-size: 14px;
+  color: var(--color-brown);
+  opacity: 0.7;
+}
+
+/* ============================================================================
+   RESULT SCREEN
+   ============================================================================ */
+
+.result-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.result-header {
+  text-align: center;
+  padding: 10px 0 20px;
+}
+
+.result-header h1 {
+  font-size: 24px;
+  color: var(--color-primary);
+}
+
+.invite-preview {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.invite-image {
+  max-width: 100%;
+  max-height: 60vh;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.action-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.download-btn,
+.share-btn {
+  flex: 1;
+  padding: 16px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.download-btn {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: var(--color-white);
+}
+
+.share-btn {
+  background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+  color: var(--color-white);
+}
+
+.download-btn:hover,
+.share-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.download-btn:active,
+.share-btn:active {
+  transform: translateY(0);
+}
+
+/* ============================================================================
+   MOBILE OPTIMIZATIONS
+   ============================================================================ */
+
+@media (max-width: 380px) {
+  .header h1 {
+    font-size: 24px;
+  }
+
+  .loading-text {
+    font-size: 20px;
+  }
+
+  .form-group input[type="text"],
+  .form-group input[type="date"] {
+    padding: 12px 14px;
+  }
+
+  .generate-btn {
+    padding: 16px;
+    font-size: 16px;
+  }
+
+  /* Stack name inputs on very small screens */
+  .form-row {
+    flex-direction: column;
+  }
+
+  /* Smaller photos on mobile */
+  .photo-preview {
+    width: 110px;
+    height: 110px;
+  }
+
+  /* Slightly smaller mascot on very small screens */
+  .mascot-large {
+    max-width: 260px;
+    max-height: 260px;
+  }
+}
