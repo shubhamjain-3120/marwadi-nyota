@@ -61,7 +61,14 @@ Create `backend/.env`:
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
 PORT=3001
+
+# For Imagen 3 (requires Vertex AI access)
+GOOGLE_GENAI_USE_VERTEXAI=true
+GOOGLE_CLOUD_PROJECT=your_gcp_project_id
+GOOGLE_CLOUD_LOCATION=us-central1
 ```
+
+**Note**: Imagen 3 requires a Google Cloud project with Vertex AI enabled. Set `GOOGLE_GENAI_USE_VERTEXAI=true` to use Vertex AI.
 
 ### 4. Run Development Servers
 
@@ -106,14 +113,13 @@ Generate AI wedding portrait.
 1. **Couple Mode** (1 photo): Preserves the exact pose from the uploaded photo
 2. **Individual Mode** (2 photos): Forces a standard wedding pose with groom on left, bride on right
 
-### Gemini Integration
+### AI Integration (Gemini + Imagen 3)
 
-- Uses `gemini-2.0-flash-exp-image-generation` model
-- Automatic retry with exponential backoff (up to 5 attempts)
-- Prompts optimized for:
-  - Preserving facial features, skin tone, body shape
-  - Traditional Marwadi wedding attire
-  - Transparent background output
+**Two-step hybrid approach:**
+1. **Gemini 2.0 Flash** - Analyzes uploaded photos to extract detailed descriptions of each person (skin tone, hair, eyes, facial features, etc.)
+2. **Imagen 3** (`imagen-3.0-generate-002`) - Generates high-quality wedding portrait based on the extracted descriptions
+
+**Note**: Imagen 3 is a text-to-image model and does not support direct image input. The descriptions extracted by Gemini are used to guide the generation, but exact facial features may not be perfectly preserved.
 
 ### Canvas Composition
 
@@ -196,5 +202,5 @@ The PWA is designed for Android WebView packaging:
 
 - **Frontend**: React 18, Vite 5, HTML5 Canvas
 - **Backend**: Node.js, Express 4, Multer
-- **AI**: Google Gemini 2.0 Flash (Image Generation)
+- **AI**: Google Gemini 2.0 Flash (Photo Analysis) + Imagen 3 (Image Generation)
 - **Styling**: CSS with CSS Variables

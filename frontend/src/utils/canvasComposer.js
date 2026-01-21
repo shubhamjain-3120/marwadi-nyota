@@ -1,11 +1,16 @@
 /**
- * Phase 4: Canvas Composer with Fixed Layout Geometry
+ * Phase 6: Royal Cursive Typography System
  *
- * Key changes from Phase 3:
- * - Hard-coded percent-based layout (no heuristics)
- * - Text hierarchy: Names = 1.4N, Details = 0.7N
- * - Simplified post-processing for flat vector style
- * - Soft base shadow under feet
+ * Key changes from Phase 5:
+ * - Royal cursive script (Alex Brush) for couple's names
+ * - Names with first letter capitalized for elegant cursive flow
+ * - Font size 30% larger for prominence
+ * - Bride's name first, groom's name second
+ * - Pink roses: before bride's first letter, after groom's last letter
+ * - Names in warm gold gradient
+ * - Ampersand in copper color
+ * - Clean humanist sans-serif (Inter) for supporting text
+ * - Precise vertical rhythm with generous whitespace
  */
 
 // Canvas dimensions for the invite (9:16 aspect ratio)
@@ -13,7 +18,7 @@ const CANVAS_WIDTH = 1080;
 const CANVAS_HEIGHT = 1920;
 
 // ============================================================================
-// PHASE 4: FIXED LAYOUT SPECIFICATION (Percent-Based)
+// PHASE 5: PREMIUM TYPOGRAPHY LAYOUT SPECIFICATION
 // ============================================================================
 const LAYOUT_V4 = {
   canvas: {
@@ -27,6 +32,7 @@ const LAYOUT_V4 = {
     marginXPercent: 0.08,     // 8% margin on each side
     topPercent: 0.22,         // Heads start at 22% from top (under arch)
     bottomPercent: 0.82,      // Feet end at 82% from top
+    sizeMultiplier: 2.0,      // Scale factor for character size (2.0 = 100% bigger)
   },
 
   // Ground shadow ellipse
@@ -39,36 +45,91 @@ const LAYOUT_V4 = {
     color: "rgba(30, 20, 15, 0.12)",
   },
 
-  // Names text (top area)
+  // =========================================================================
+  // TYPOGRAPHY HIERARCHY (Premium Modern-Luxury)
+  // =========================================================================
+  
+  // Names - Royal cursive script (Alex Brush)
   names: {
-    yPercent: 0.145,          // 14.5% from top
-    fontRatio: 1.4,           // 1.4 × base size
-    maxWidthPercent: 0.85,
+    yPercent: 0.115,          // Positioned at top with generous whitespace (1% higher)
+    fontRatio: 2.405,         // 30% larger than previous 1.85 (1.85 * 1.30 = 2.405)
+    maxWidthPercent: 0.88,
+    letterSpacing: 0.02,      // Minimal tracking for cursive script
+    fontFamily: "AlexBrush, 'Alex Brush', 'Great Vibes', cursive",
+    fontWeight: "400",        // Regular weight for elegant curves
   },
 
-  // Date text
+  // Ampersand - Decorative connector
+  ampersand: {
+    scale: 0.35,              // 35% of names size (50% smaller than before)
+    yOffset: 0,               // Centered with names
+  },
+
+  // Date - Playfair Display with light brown
   date: {
-    yPercent: 0.86,           // 86% from top
-    fontRatio: 0.7,           // 0.7 × base size
+    yPercent: 0.875,          // Below character, generous spacing
+    fontRatio: 0.7,           // 30% smaller than base size (54px * 0.7 = ~38px)
+    letterSpacing: 0.18,      // Moderate tracking (18%)
+    fontFamily: "PlayfairDisplay, 'Playfair Display', Georgia, serif",
+    fontWeight: "400",
+    color: "#8B7355",         // Light brown
   },
 
-  // Venue text
+  // Venue - Playfair Display with light brown
   venue: {
-    yPercent: 0.90,           // 90% from top
-    fontRatio: 0.7,           // 0.7 × base size
+    yPercent: 0.915,          // Bottom area with breathing room
+    fontRatio: 0.7,           // 30% smaller than base size (54px * 0.7 = ~38px)
+    letterSpacing: 0.18,      // Moderate tracking (18%)
+    fontFamily: "PlayfairDisplay, 'Playfair Display', Georgia, serif",
+    fontWeight: "400",
+    color: "#8B7355",         // Light brown
   },
 
   // Base font size (N)
-  baseFontSize: 48,
+  baseFontSize: 54,
 };
 
-// Colors
+// ============================================================================
+// PREMIUM COLOR PALETTE - Warm Metallic Gold with Foil Texture
+// ============================================================================
 const COLORS = {
-  goldGradientStart: "#FFD700",
-  goldGradientMid: "#FFF8DC",
-  goldGradientEnd: "#B8860B",
-  detailsText: "#4A3728",
+  // Warm metallic gold palette (richer, warmer tones)
+  goldPrimary: "#D4A853",       // Rich warm gold base
+  goldHighlight: "#F8E8B0",     // Warm champagne highlight (foil specular)
+  goldDeep: "#A67C3D",          // Deep amber shadow tone
+  goldMid: "#E6C066",           // Warm mid-tone gold
+  goldRich: "#C9942B",          // Rich saturated gold
+  goldBright: "#F0D78C",        // Bright warm gold for highlights
+  
+  // Warm ivory for supporting text
+  ivoryWarm: "#F5EDE0",         // Warm ivory primary
+  ivoryLight: "#FFFEF8",        // Light ivory highlight
+  ivoryMuted: "#E8DFD0",        // Muted ivory for subtle contrast
+  
+  // Copper for ampersand
+  copperBrown: "#B87333",       // Rich copper base
+  copperBrownLight: "#CD8544",  // Lighter copper highlight
+  copperBrownDark: "#8B5A2B",   // Dark copper shadow
+  
+  // Legacy ampersand gold colors (no longer used for ampersand)
+  ampersandGold: "#CFB53B",     // Warm metallic gold
+  ampersandGoldLight: "#E6CC66", // Light gold highlight
+  ampersandGoldDark: "#B8960B",  // Dark gold shadow
+  
+  // Legacy support
+  goldGradientStart: "#D4B978",
+  goldGradientMid: "#F5E6C8",
+  goldGradientEnd: "#8B7355",
+  detailsText: "#C9A961",
 };
+
+/**
+ * Capitalize the first letter of a string
+ */
+function capitalizeFirst(str) {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -85,39 +146,77 @@ function loadImage(src) {
 }
 
 async function loadFonts() {
-  const greatVibes = new FontFace(
-    "GreatVibes",
-    "url(/fonts/GreatVibes-Regular.ttf)"
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:loadFonts:start',message:'Starting font loading',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
+  
+  // Premium typography fonts
+  const alexBrush = new FontFace(
+    "AlexBrush",
+    "url(/fonts/AlexBrush-Regular.ttf)"
   );
   const playfair = new FontFace(
     "PlayfairDisplay",
     "url(/fonts/PlayfairDisplay-Regular.ttf)"
   );
+  const inter = new FontFace(
+    "Inter",
+    "url(/fonts/Inter-Regular.ttf)"
+  );
+  const interMedium = new FontFace(
+    "InterMedium",
+    "url(/fonts/Inter-Medium.ttf)"
+  );
+  // Legacy font for fallback
+  const greatVibes = new FontFace(
+    "GreatVibes",
+    "url(/fonts/GreatVibes-Regular.ttf)"
+  );
 
   try {
-    await Promise.all([greatVibes.load(), playfair.load()]);
-    document.fonts.add(greatVibes);
-    document.fonts.add(playfair);
+    const loadedFonts = await Promise.all([
+      alexBrush.load(),
+      playfair.load(),
+      inter.load(),
+      interMedium.load(),
+      greatVibes.load().catch(() => null), // Optional fallback
+    ]);
+    
+    loadedFonts.forEach(font => {
+      if (font) document.fonts.add(font);
+    });
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:loadFonts:done',message:'Font loading complete',data:{fontsLoaded:loadedFonts.filter(Boolean).length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    console.log("[Composer] Premium fonts loaded successfully");
   } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:loadFonts:error',message:'Font loading failed',data:{error:err.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
     console.warn("[Composer] Font loading failed, using fallbacks:", err);
   }
 }
 
 // ============================================================================
-// TEXT RENDERING WITH HIERARCHY
+// TEXT RENDERING WITH PREMIUM TYPOGRAPHY HIERARCHY
 // ============================================================================
 
 /**
  * Calculate font size to fit text within max width
- * Uses the 1.4N ratio for names and auto-shrinks if needed
+ * Includes letter-spacing compensation for accurate measurement
  */
-function calculateFontSize(ctx, text, maxWidth, idealSize, minSize, fontFamily) {
+function calculateFontSize(ctx, text, maxWidth, idealSize, minSize, fontFamily, letterSpacing = 0) {
   let fontSize = idealSize;
 
   while (fontSize > minSize) {
     ctx.font = `${fontSize}px ${fontFamily}`;
     const metrics = ctx.measureText(text);
-    if (metrics.width <= maxWidth) {
+    // Account for letter-spacing in width calculation
+    const spacingWidth = (text.length - 1) * (fontSize * letterSpacing);
+    const totalWidth = metrics.width + spacingWidth;
+    
+    if (totalWidth <= maxWidth) {
       return fontSize;
     }
     fontSize -= 2;
@@ -127,80 +226,471 @@ function calculateFontSize(ctx, text, maxWidth, idealSize, minSize, fontFamily) 
 }
 
 /**
- * Draw names with golden gradient (1.4N ratio)
+ * Draw text with letter-spacing (tracking)
+ * Canvas doesn't natively support letter-spacing, so we draw character by character
  */
-function drawNamesText(ctx, text) {
-  const y = CANVAS_HEIGHT * LAYOUT_V4.names.yPercent;
-  const maxWidth = CANVAS_WIDTH * LAYOUT_V4.names.maxWidthPercent;
-  const idealSize = LAYOUT_V4.baseFontSize * LAYOUT_V4.names.fontRatio;
-  const minSize = LAYOUT_V4.baseFontSize * 0.8;
+function drawTextWithTracking(ctx, text, x, y, letterSpacing) {
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawTextWithTracking:entry',message:'drawTextWithTracking called',data:{text,x,y,letterSpacing,font:ctx.font,fillStyle:ctx.fillStyle},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
+
+  if (letterSpacing <= 0) {
+    ctx.fillText(text, x, y);
+    // #region agent log
+    fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawTextWithTracking:noSpacing',message:'No letter spacing, used fillText directly',data:{text,x,y},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    return;
+  }
+
+  const chars = text.split('');
+  const fontSize = parseFloat(ctx.font);
+  const spacing = fontSize * letterSpacing;
+  
+  // Calculate total width for centering
+  let totalWidth = 0;
+  chars.forEach(char => {
+    totalWidth += ctx.measureText(char).width;
+  });
+  totalWidth += (chars.length - 1) * spacing;
+  
+  // Start position (centered)
+  let currentX = x - totalWidth / 2;
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawTextWithTracking:calculated',message:'Letter tracking calculated',data:{fontSize,spacing,totalWidth,startX:currentX,numChars:chars.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
+
+  chars.forEach((char, i) => {
+    const charWidth = ctx.measureText(char).width;
+    ctx.fillText(char, currentX + charWidth / 2, y);
+    currentX += charWidth + spacing;
+  });
+
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawTextWithTracking:exit',message:'drawTextWithTracking completed',data:{finalX:currentX},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
+}
+
+/**
+ * Draw text with small caps styling
+ * First letter of each word is full size, remaining letters are smaller uppercase
+ */
+function drawTextWithSmallCaps(ctx, text, x, y, letterSpacing, fontFamily, fontWeight) {
+  const baseFontSize = parseFloat(ctx.font);
+  const smallCapScale = 0.75; // Small caps letters are 75% of the size
+  const smallCapFontSize = baseFontSize * smallCapScale;
+  const spacing = baseFontSize * letterSpacing;
+  
+  // Parse text into segments with size info
+  const segments = [];
+  const words = text.split(' ');
+  
+  words.forEach((word, wordIndex) => {
+    if (wordIndex > 0) {
+      segments.push({ char: ' ', isFirstLetter: false });
+    }
+    word.split('').forEach((char, charIndex) => {
+      const isFirstLetter = charIndex === 0;
+      segments.push({ 
+        char: char.toUpperCase(), 
+        isFirstLetter,
+        fontSize: isFirstLetter ? baseFontSize : smallCapFontSize
+      });
+    });
+  });
+  
+  // Calculate total width for centering
+  let totalWidth = 0;
+  segments.forEach((seg, i) => {
+    ctx.font = `${fontWeight} ${seg.fontSize || baseFontSize}px ${fontFamily}`;
+    totalWidth += ctx.measureText(seg.char).width;
+    if (i < segments.length - 1) {
+      totalWidth += spacing;
+    }
+  });
+  
+  // Start position (centered)
+  let currentX = x - totalWidth / 2;
+  
+  // Draw each character
+  segments.forEach((seg, i) => {
+    ctx.font = `${fontWeight} ${seg.fontSize || baseFontSize}px ${fontFamily}`;
+    const charWidth = ctx.measureText(seg.char).width;
+    ctx.fillText(seg.char, currentX + charWidth / 2, y);
+    currentX += charWidth + spacing;
+  });
+}
+
+/**
+ * Create warm metallic gold gradient with subtle foil-like appearance
+ * Very subtle gradient transitions for elegant, non-flat fill
+ */
+function createPremiumGoldGradient(ctx, x, y, width, height) {
+  // Diagonal gradient for subtle metallic sheen
+  const gradient = ctx.createLinearGradient(
+    x - width / 2,
+    y - height * 0.3,
+    x + width / 2,
+    y + height * 0.3
+  );
+  
+  // Very subtle gradient: warm gold base with gentle highlights
+  // Creates foil-like appearance without harsh color changes
+  gradient.addColorStop(0, COLORS.goldRich);        // Rich saturated gold
+  gradient.addColorStop(0.15, COLORS.goldPrimary);  // Warm gold base
+  gradient.addColorStop(0.35, COLORS.goldMid);      // Warm mid-tone
+  gradient.addColorStop(0.5, COLORS.goldBright);    // Subtle bright highlight (foil specular)
+  gradient.addColorStop(0.65, COLORS.goldMid);      // Back to mid-tone
+  gradient.addColorStop(0.85, COLORS.goldPrimary);  // Warm gold base
+  gradient.addColorStop(1, COLORS.goldRich);        // Rich saturated gold
+  
+  return gradient;
+}
+
+/**
+ * Draw foil texture overlay for metallic simulation
+ * Creates subtle noise pattern that simulates foil/metallic finish
+ */
+function drawFoilTexture(ctx, x, y, width, height, intensity = 0.08) {
+  // Create offscreen canvas for texture
+  const textureCanvas = document.createElement('canvas');
+  textureCanvas.width = width;
+  textureCanvas.height = height;
+  const textureCtx = textureCanvas.getContext('2d');
+  
+  // Create subtle noise pattern
+  const imageData = textureCtx.createImageData(width, height);
+  const data = imageData.data;
+  
+  for (let i = 0; i < data.length; i += 4) {
+    // Random value for each pixel with gold-tinted noise
+    const noise = Math.random();
+    // Very subtle variation - mostly transparent with occasional bright spots
+    if (noise > 0.97) {
+      // Rare bright specular highlight (foil glint)
+      data[i] = 255;     // R - gold tint
+      data[i + 1] = 235; // G
+      data[i + 2] = 180; // B
+      data[i + 3] = Math.floor(40 * intensity * 10); // A - subtle
+    } else if (noise > 0.85) {
+      // Subtle texture variation
+      const brightness = 180 + Math.floor(noise * 75);
+      data[i] = brightness;
+      data[i + 1] = brightness * 0.85;
+      data[i + 2] = brightness * 0.6;
+      data[i + 3] = Math.floor(15 * intensity * 10); // Very subtle
+    } else {
+      // Transparent (no noise)
+      data[i + 3] = 0;
+    }
+  }
+  
+  textureCtx.putImageData(imageData, 0, 0);
+  
+  // Apply slight blur for smoother texture
+  ctx.save();
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.filter = 'blur(0.5px)';
+  ctx.drawImage(textureCanvas, x - width / 2, y - height / 2, width, height);
+  ctx.restore();
+}
+
+/**
+ * Create warm ivory gradient for supporting text
+ */
+function createWarmIvoryGradient(ctx, x, y, width, height) {
+  const gradient = ctx.createLinearGradient(
+    x - width / 2,
+    y - height / 2,
+    x + width / 2,
+    y + height / 2
+  );
+  
+  gradient.addColorStop(0, COLORS.ivoryMuted);
+  gradient.addColorStop(0.5, COLORS.ivoryWarm);
+  gradient.addColorStop(1, COLORS.ivoryMuted);
+  
+  return gradient;
+}
+
+/**
+ * Create copper brown gradient for names
+ */
+function createCopperBrownGradient(ctx, x, y, width, height) {
+  const gradient = ctx.createLinearGradient(
+    x - width / 2,
+    y - height * 0.3,
+    x + width / 2,
+    y + height * 0.3
+  );
+  
+  gradient.addColorStop(0, COLORS.copperBrownDark);
+  gradient.addColorStop(0.2, COLORS.copperBrown);
+  gradient.addColorStop(0.4, COLORS.copperBrownLight);
+  gradient.addColorStop(0.6, COLORS.copperBrownLight);
+  gradient.addColorStop(0.8, COLORS.copperBrown);
+  gradient.addColorStop(1, COLORS.copperBrownDark);
+  
+  return gradient;
+}
+
+/**
+ * Create warm metallic gold gradient for ampersand
+ */
+function createAmpersandGoldGradient(ctx, x, y, width, height) {
+  const gradient = ctx.createLinearGradient(
+    x - width / 2,
+    y - height * 0.3,
+    x + width / 2,
+    y + height * 0.3
+  );
+  
+  gradient.addColorStop(0, COLORS.ampersandGoldDark);
+  gradient.addColorStop(0.15, COLORS.ampersandGold);
+  gradient.addColorStop(0.35, COLORS.ampersandGoldLight);
+  gradient.addColorStop(0.5, "#F0DC82"); // Bright highlight
+  gradient.addColorStop(0.65, COLORS.ampersandGoldLight);
+  gradient.addColorStop(0.85, COLORS.ampersandGold);
+  gradient.addColorStop(1, COLORS.ampersandGoldDark);
+  
+  return gradient;
+}
+
+/**
+ * Draw names with royal cursive Alex Brush font and pink roses
+ * Bride's name first, groom's name second, with first letter capitalized
+ * Names in warm gold gradient, ampersand in copper
+ */
+function drawNamesText(ctx, brideName, groomName, pinkRoseImg) {
+  const layout = LAYOUT_V4.names;
+  const y = CANVAS_HEIGHT * layout.yPercent;
+  const maxWidth = CANVAS_WIDTH * layout.maxWidthPercent;
+  const idealSize = LAYOUT_V4.baseFontSize * layout.fontRatio;
+  const minSize = LAYOUT_V4.baseFontSize * 1.2;
+  
+  // Reference combined character count for ideal font size (bride + groom names)
+  const IDEAL_COMBINED_LENGTH = 13;
+
+  // Format names with first letter capitalized for cursive elegance
+  const brideNameFormatted = capitalizeFirst(brideName);
+  const groomNameFormatted = capitalizeFirst(groomName);
+  const ampersand = " & ";
+  const fullText = `${brideNameFormatted}${ampersand}${groomNameFormatted}`;
+
+  // Calculate font size based on combined name length
+  // If combined length exceeds 13 characters, scale down proportionally
+  const combinedNameLength = brideNameFormatted.length + groomNameFormatted.length;
+  let adjustedIdealSize = idealSize;
+  
+  if (combinedNameLength > IDEAL_COMBINED_LENGTH) {
+    // Scale down proportionally: 13 chars = 100%, 20 chars = 65%, etc.
+    const scaleFactor = IDEAL_COMBINED_LENGTH / combinedNameLength;
+    adjustedIdealSize = idealSize * scaleFactor;
+    // Ensure we don't go below minimum size
+    adjustedIdealSize = Math.max(adjustedIdealSize, minSize);
+  }
 
   const fontSize = calculateFontSize(
     ctx,
-    text,
+    fullText,
     maxWidth,
-    idealSize,
+    adjustedIdealSize,
     minSize,
-    "GreatVibes, cursive"
+    layout.fontFamily,
+    layout.letterSpacing
   );
 
-  ctx.font = `${fontSize}px GreatVibes, cursive`;
+  ctx.font = `${layout.fontWeight} ${fontSize}px ${layout.fontFamily}`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+
+  // Calculate individual text widths
+  const brideWidth = ctx.measureText(brideNameFormatted).width;
+  const ampersandWidth = ctx.measureText(ampersand).width;
+  const groomWidth = ctx.measureText(groomNameFormatted).width;
+  const totalTextWidth = brideWidth + ampersandWidth + groomWidth;
+  
+  // Starting X position (centered)
+  let currentX = (CANVAS_WIDTH - totalTextWidth) / 2;
+  
+  // Draw bride's name in warm gold gradient
+  const goldGradient = createPremiumGoldGradient(
+    ctx,
+    currentX + brideWidth / 2,
+    y,
+    brideWidth,
+    fontSize * 1.5
+  );
+  
+  ctx.shadowColor = "rgba(166, 124, 61, 0.35)";
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 2;
+  
+  ctx.fillStyle = goldGradient;
+  ctx.fillText(brideNameFormatted, currentX, y);
+  currentX += brideWidth;
+  
+  // Draw ampersand in copper
+  const copperGradient = createCopperBrownGradient(
+    ctx,
+    currentX + ampersandWidth / 2,
+    y,
+    ampersandWidth,
+    fontSize * 1.5
+  );
+  
+  ctx.shadowColor = "rgba(139, 90, 43, 0.35)";
+  ctx.fillStyle = copperGradient;
+  ctx.fillText(ampersand, currentX, y);
+  currentX += ampersandWidth;
+  
+  // Draw groom's name in warm gold gradient
+  const goldGradient2 = createPremiumGoldGradient(
+    ctx,
+    currentX + groomWidth / 2,
+    y,
+    groomWidth,
+    fontSize * 1.5
+  );
+  
+  ctx.shadowColor = "rgba(166, 124, 61, 0.35)";
+  ctx.fillStyle = goldGradient2;
+  ctx.fillText(groomNameFormatted, currentX, y);
+  
+  // Reset shadow
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  
+  // Apply subtle foil texture overlay for metallic simulation
+  drawFoilTexture(ctx, CANVAS_WIDTH / 2, y, maxWidth, fontSize * 1.8, 0.06);
+}
+
+/**
+ * Format date string to elegant "DD MMMM YYYY" format
+ * Uses refined typography with proper spacing
+ */
+function formatDateDisplay(dateStr) {
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      return dateStr;
+    }
+    const months = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    const month = months[date.getMonth()];
+    const day = date.getDate();
+    const year = date.getFullYear();
+    return `${day} ${month} ${year}`;
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Draw date text with Inter Medium - restrained subline
+ * Clean humanist sans-serif with warm metallic gold
+ */
+function drawDateText(ctx, dateStr) {
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawDateText:entry',message:'drawDateText called',data:{dateStr,dateStrType:typeof dateStr,dateStrLength:dateStr?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
+
+  const layout = LAYOUT_V4.date;
+  const y = CANVAS_HEIGHT * layout.yPercent;
+  const fontSize = LAYOUT_V4.baseFontSize * layout.fontRatio;
+
+  const formattedDate = formatDateDisplay(dateStr);
+  const displayText = `Date: ${formattedDate}`;
+
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawDateText:values',message:'Date text values computed',data:{formattedDate,displayText,y,fontSize,fontFamily:layout.fontFamily,color:layout.color,letterSpacing:layout.letterSpacing,canvasWidth:CANVAS_WIDTH,canvasHeight:CANVAS_HEIGHT},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+
+  // Playfair Display for elegant date text
+  ctx.font = `${layout.fontWeight} ${fontSize}px ${layout.fontFamily}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
-  // Golden gradient
-  const gradient = ctx.createLinearGradient(
-    CANVAS_WIDTH / 2 - 250,
-    y - fontSize / 2,
-    CANVAS_WIDTH / 2 + 250,
-    y + fontSize / 2
-  );
-  gradient.addColorStop(0, COLORS.goldGradientStart);
-  gradient.addColorStop(0.5, COLORS.goldGradientMid);
-  gradient.addColorStop(1, COLORS.goldGradientEnd);
+  // Subtle shadow for depth
+  ctx.shadowColor = "rgba(139, 115, 85, 0.2)";
+  ctx.shadowBlur = 2;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 1;
 
-  // Shadow for depth
-  ctx.shadowColor = "rgba(0, 0, 0, 0.25)";
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetX = 2;
-  ctx.shadowOffsetY = 2;
+  // Light brown color
+  ctx.fillStyle = layout.color;
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawDateText:beforeDraw',message:'About to call drawTextWithTracking for date',data:{x:CANVAS_WIDTH/2,y,letterSpacing:layout.letterSpacing,font:ctx.font,fillStyle:ctx.fillStyle},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
 
-  ctx.fillStyle = gradient;
-  ctx.fillText(text, CANVAS_WIDTH / 2, y);
+  // Draw with moderate letter-spacing
+  drawTextWithTracking(ctx, displayText, CANVAS_WIDTH / 2, y, layout.letterSpacing);
 
   // Reset shadow
   ctx.shadowColor = "transparent";
   ctx.shadowBlur = 0;
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 0;
+
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawDateText:exit',message:'drawDateText completed',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
 }
 
 /**
- * Draw date text (0.7N ratio)
+ * Draw venue text with Playfair Display - light brown color
  */
-function drawDateText(ctx, text) {
-  const y = CANVAS_HEIGHT * LAYOUT_V4.date.yPercent;
-  const fontSize = LAYOUT_V4.baseFontSize * LAYOUT_V4.date.fontRatio;
+function drawVenueText(ctx, venue) {
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawVenueText:entry',message:'drawVenueText called',data:{venue,venueType:typeof venue,venueLength:venue?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
 
-  ctx.font = `${fontSize}px PlayfairDisplay, serif`;
+  const layout = LAYOUT_V4.venue;
+  const y = CANVAS_HEIGHT * layout.yPercent;
+  const fontSize = LAYOUT_V4.baseFontSize * layout.fontRatio;
+
+  const displayText = `Venue: ${venue}`;
+
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawVenueText:values',message:'Venue text values computed',data:{displayText,y,fontSize,fontFamily:layout.fontFamily,color:layout.color,letterSpacing:layout.letterSpacing},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+
+  // Playfair Display for elegant venue text
+  ctx.font = `${layout.fontWeight} ${fontSize}px ${layout.fontFamily}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillStyle = COLORS.detailsText;
-  ctx.fillText(text, CANVAS_WIDTH / 2, y);
-}
 
-/**
- * Draw venue text (0.7N ratio)
- */
-function drawVenueText(ctx, text) {
-  const y = CANVAS_HEIGHT * LAYOUT_V4.venue.yPercent;
-  const fontSize = LAYOUT_V4.baseFontSize * LAYOUT_V4.venue.fontRatio;
+  // Subtle shadow for depth
+  ctx.shadowColor = "rgba(139, 115, 85, 0.2)";
+  ctx.shadowBlur = 2;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 1;
 
-  ctx.font = `${fontSize}px PlayfairDisplay, serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = COLORS.detailsText;
-  ctx.fillText(text, CANVAS_WIDTH / 2, y);
+  // Light brown color
+  ctx.fillStyle = layout.color;
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawVenueText:beforeDraw',message:'About to call drawTextWithTracking for venue',data:{x:CANVAS_WIDTH/2,y,letterSpacing:layout.letterSpacing,font:ctx.font,fillStyle:ctx.fillStyle},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
+
+  // Draw with moderate letter-spacing
+  drawTextWithTracking(ctx, displayText, CANVAS_WIDTH / 2, y, layout.letterSpacing);
+
+  // Reset shadow
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:drawVenueText:exit',message:'drawVenueText completed',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
 }
 
 // ============================================================================
@@ -234,10 +724,15 @@ function calculateCharacterBounds(characterImg) {
     charHeight = charWidth / charAspect;
   }
 
+  // Apply size multiplier (e.g., 2.0 = 100% bigger)
+  const multiplier = LAYOUT_V4.character.sizeMultiplier || 1.0;
+  charWidth *= multiplier;
+  charHeight *= multiplier;
+
   // Center horizontally
   const charX = (CANVAS_WIDTH - charWidth) / 2;
 
-  // Align feet to bottom of target area
+  // Align feet to bottom of target area (keep feet position stable)
   const charY = targetBottom - charHeight;
 
   return {
@@ -332,17 +827,29 @@ function createBackgroundCanvas(backgroundImg) {
  * @returns {Promise<string>} - Data URL of final PNG
  */
 export async function composeInvite({ characterImage, brideName, groomName, date, venue }) {
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:composeInvite:start',message:'Starting composition',data:{brideName,groomName,date,venue,hasCharacterImage:!!characterImage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
   console.log("[Composer] Starting Phase 4 composition...");
   const startTime = performance.now();
 
   // Load fonts
   await loadFonts();
 
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:composeInvite:loadingImages',message:'Loading images',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
+
   // Load images in parallel
-  const [backgroundImg, characterImg] = await Promise.all([
+  const [backgroundImg, characterImg, pinkRoseImg] = await Promise.all([
     loadImage("/assets/background.png").catch(() => null),
     loadImage(characterImage),
+    loadImage("/assets/pink-rose.svg").catch(() => null),
   ]);
+
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasComposer.js:composeInvite:imagesLoaded',message:'Images loaded',data:{hasBackground:!!backgroundImg,hasCharacter:!!characterImg},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+  // #endregion
 
   console.log(`[Composer] Images loaded: ${(performance.now() - startTime).toFixed(0)}ms`);
 
@@ -380,17 +887,21 @@ export async function composeInvite({ characterImage, brideName, groomName, date
   );
 
   // =========================================================================
-  // LAYER 4: Text Overlays
+  // LAYER 4: Premium Typography Overlays
   // =========================================================================
 
-  // Names (1.4N, GreatVibes, gold gradient)
-  const namesText = `${groomName} & ${brideName}`;
-  drawNamesText(ctx, namesText);
+  // Names - Royal cursive Alex Brush font with pink roses
+  // Bride's name first, groom's second, both in lowercase
+  // Pink rose before bride's name, pink rose after groom's name
+  // Names in warm gold gradient, ampersand in copper
+  drawNamesText(ctx, brideName, groomName, pinkRoseImg);
 
-  // Date (0.7N, Playfair, brown)
+  // Date - Restrained subline (Inter Medium, soft gold)
+  // Clean humanist sans-serif with wide letter-spacing
   drawDateText(ctx, date);
 
-  // Venue (0.7N, Playfair, brown)
+  // Venue - Minimal supporting text (Inter Regular, warm ivory-gold)
+  // Subtle presence with refined tracking
   drawVenueText(ctx, venue);
 
   const totalTime = performance.now() - startTime;

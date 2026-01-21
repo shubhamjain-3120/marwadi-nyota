@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+  <!-- Simple elegant 6-petal flower for wedding invitations -->
+  <circle cx="12" cy="12" r="3" />
+  <ellipse cx="12" cy="5" rx="2.5" ry="4" />
+  <ellipse cx="12" cy="19" rx="2.5" ry="4" />
+  <ellipse cx="5" cy="8.5" rx="2.5" ry="4" transform="rotate(-60 5 8.5)" />
+  <ellipse cx="19" cy="8.5" rx="2.5" ry="4" transform="rotate(60 19 8.5)" />
+  <ellipse cx="5" cy="15.5" rx="2.5" ry="4" transform="rotate(60 5 15.5)" />
+  <ellipse cx="19" cy="15.5" rx="2.5" ry="4" transform="rotate(-60 19 15.5)" />
+</svg>

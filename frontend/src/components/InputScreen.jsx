@@ -1,15 +1,18 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import useSpeechRecognition from "../hooks/useSpeechRecognition";
 
 /**
- * Phase 4: Redesigned InputScreen
+ * Phase 6: Single Photo Mode
  *
- * Changes from Phase 3:
- * - Auto-detect 1 or 2 photos (no radio buttons)
- * - Multi-file upload support
- * - Swap button for 2-photo mode
+ * Changes from Phase 5:
+ * - Only require 1 photo (couple photo with both groom and bride)
  * - Native date picker
  * - Cleaner photo upload UX
+ * - Proper cleanup of Object URLs to prevent memory leaks
  */
+
+// LocalStorage key for caching form data
+const CACHE_KEY = "wedding-invite-form-cache";
 
 // Format date for invite display
 function formatDateForInvite(isoDate) {
@@ -19,52 +22,92 @@ function formatDateForInvite(isoDate) {
   return date.toLocaleDateString("en-IN", options);
 }
 
-export default function InputScreen({ onGenerate, error }) {
-  // Form fields
-  const [brideName, setBrideName] = useState("");
-  const [groomName, setGroomName] = useState("");
-  const [weddingDate, setWeddingDate] = useState("");
-  const [venue, setVenue] = useState("");
+// Load cached form data from localStorage
+function loadCachedFormData() {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {
+    console.warn("Failed to load cached form data:", e);
+  }
+  return null;
+}
 
-  // Photo state - array of 0-2 photos
-  const [photos, setPhotos] = useState([]);
-  const [isSwapped, setIsSwapped] = useState(false);
+// Save form data to localStorage
+function saveCachedFormData(data) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.warn("Failed to save form data to cache:", e);
+  }
+}
+
+export default function InputScreen({ onGenerate, error }) {
+  // Load cached data on initial render
+  const cachedData = useMemo(() => loadCachedFormData(), []);
+
+  // Form fields - initialize from cache if available
+  const [brideName, setBrideName] = useState(cachedData?.brideName || "");
+  const [groomName, setGroomName] = useState(cachedData?.groomName || "");
+  const [weddingDate, setWeddingDate] = useState(cachedData?.weddingDate || "");
+  const [venue, setVenue] = useState(cachedData?.venue || "");
+
+  // Save form data to cache whenever it changes
+  useEffect(() => {
+    saveCachedFormData({ brideName, groomName, weddingDate, venue });
+  }, [brideName, groomName, weddingDate, venue]);
+
+  // Photo state - single photo (couple photo)
+  const [photo, setPhoto] = useState(null);
 
   const fileInputRef = useRef(null);
 
-  // Derived values
-  const photoCount = photos.length;
-  const isTwoPhotoMode = photoCount === 2;
+  // Voice input
+  const { isListening, activeField, startListening, stopListening, isSupported } =
+    useSpeechRecognition();
 
-  // Get photos in correct order (considering swap)
-  const getOrderedPhotos = useCallback(() => {
-    if (photoCount !== 2) return photos;
-    return isSwapped ? [photos[1], photos[0]] : photos;
-  }, [photos, isSwapped, photoCount]);
+  // Handle voice input for a field
+  const handleVoiceInput = (fieldId, setter) => {
+    if (isListening && activeField === fieldId) {
+      stopListening();
+    } else {
+      startListening(fieldId, setter);
+    }
+  };
+
+  // Derived values
+  const hasPhoto = photo !== null;
+
+  // Create and manage Object URL for photo preview
+  // This prevents memory leaks by cleaning up old URL when photo changes
+  const photoUrl = useMemo(() => {
+    return photo ? URL.createObjectURL(photo) : null;
+  }, [photo]);
+
+  // Cleanup Object URL when photo changes or component unmounts
+  useEffect(() => {
+    return () => {
+      if (photoUrl) URL.revokeObjectURL(photoUrl);
+    };
+  }, [photoUrl]);
 
   // Handle file selection
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // Take up to 2 photos
-    const selectedPhotos = files.slice(0, 2);
-    setPhotos(selectedPhotos);
-    setIsSwapped(false); // Reset swap when new photos are selected
+    // Take only the first photo
+    setPhoto(files[0]);
 
-    // Clear the input so the same files can be selected again
+    // Clear the input so the same file can be selected again
     e.target.value = "";
   };
 
-  // Handle swap button
-  const handleSwap = () => {
-    setIsSwapped(!isSwapped);
-  };
-
-  // Clear photos
-  const handleClearPhotos = () => {
-    setPhotos([]);
-    setIsSwapped(false);
+  // Clear photo
+  const handleClearPhoto = () => {
+    setPhoto(null);
   };
 
   // Handle form submission
@@ -76,29 +119,23 @@ export default function InputScreen({ onGenerate, error }) {
       return;
     }
 
-    if (photos.length === 0) {
-      alert("Please upload at least one photo");
+    if (!photo) {
+      alert("Please upload a couple photo");
       return;
     }
-
-    // Get photos in correct order
-    const orderedPhotos = getOrderedPhotos();
 
     onGenerate({
       brideName: brideName.trim(),
       groomName: groomName.trim(),
       date: formatDateForInvite(weddingDate),
       venue: venue.trim(),
-      photo1: orderedPhotos[0],
-      photo2: orderedPhotos[1] || null,
+      photo, // Single couple photo
     });
   };
 
   // Render photo preview section
   const renderPhotoSection = () => {
-    const orderedPhotos = getOrderedPhotos();
-
-    if (photoCount === 0) {
+    if (!hasPhoto) {
       return (
         <div className="photo-upload-empty">
           <button
@@ -107,67 +144,28 @@ export default function InputScreen({ onGenerate, error }) {
             onClick={() => fileInputRef.current?.click()}
           >
             <span className="upload-icon">+</span>
-            <span className="upload-text">Upload Photo(s)</span>
-            <span className="upload-hint">Select 1 couple photo or 2 individual photos</span>
+            <span className="upload-text">Upload Photo</span>
+            <span className="upload-hint">Select a couple photo with both groom and bride</span>
           </button>
         </div>
       );
     }
 
-    if (photoCount === 1) {
-      return (
-        <div className="photo-single">
-          <div className="photo-card">
-            <span className="photo-label">Couple Photo</span>
-            <div className="photo-preview">
-              <img src={URL.createObjectURL(photos[0])} alt="Couple" />
-            </div>
-          </div>
-          <button
-            type="button"
-            className="change-photos-btn"
-            onClick={handleClearPhotos}
-          >
-            Change Photo
-          </button>
-        </div>
-      );
-    }
-
-    // Two photos with swap button
+    // Single photo - display with change option
     return (
-      <div className="photo-dual">
-        <div className="photo-pair">
-          <div className="photo-card">
-            <span className="photo-label">Groom</span>
-            <div className="photo-preview">
-              <img src={URL.createObjectURL(orderedPhotos[0])} alt="Groom" />
-            </div>
-          </div>
-
-          <button
-            type="button"
-            className="swap-btn"
-            onClick={handleSwap}
-            aria-label="Swap photos"
-          >
-            <span className="swap-icon">⇄</span>
-          </button>
-
-          <div className="photo-card">
-            <span className="photo-label">Bride</span>
-            <div className="photo-preview">
-              <img src={URL.createObjectURL(orderedPhotos[1])} alt="Bride" />
-            </div>
+      <div className="photo-single">
+        <div className="photo-card photo-card-large">
+          <div className="photo-preview">
+            <img src={photoUrl} alt="Couple photo" />
           </div>
         </div>
 
         <button
           type="button"
           className="change-photos-btn"
-          onClick={handleClearPhotos}
+          onClick={handleClearPhoto}
         >
-          Change Photos
+          Change Photo
         </button>
       </div>
     );
@@ -187,28 +185,58 @@ export default function InputScreen({ onGenerate, error }) {
         <div className="form-row">
           <div className="form-group">
             <label htmlFor="groomName">Groom Name / दूल्हे का नाम</label>
-            <input
-              type="text"
-              id="groomName"
-              value={groomName}
-              onChange={(e) => setGroomName(e.target.value)}
-              placeholder="Enter groom's name"
-              autoComplete="off"
-              required
-            />
+            <div className="input-with-voice">
+              <input
+                type="text"
+                id="groomName"
+                value={groomName}
+                onChange={(e) => setGroomName(e.target.value)}
+                placeholder="Enter groom's name"
+                autoComplete="off"
+                required
+              />
+              {isSupported && (
+                <button
+                  type="button"
+                  className={`voice-btn ${isListening && activeField === "groomName" ? "listening" : ""}`}
+                  onClick={() => handleVoiceInput("groomName", setGroomName)}
+                  aria-label="Voice input for groom name"
+                >
+                  <svg className="voice-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="form-group">
             <label htmlFor="brideName">Bride Name / दुल्हन का नाम</label>
-            <input
-              type="text"
-              id="brideName"
-              value={brideName}
-              onChange={(e) => setBrideName(e.target.value)}
-              placeholder="Enter bride's name"
-              autoComplete="off"
-              required
-            />
+            <div className="input-with-voice">
+              <input
+                type="text"
+                id="brideName"
+                value={brideName}
+                onChange={(e) => setBrideName(e.target.value)}
+                placeholder="Enter bride's name"
+                autoComplete="off"
+                required
+              />
+              {isSupported && (
+                <button
+                  type="button"
+                  className={`voice-btn ${isListening && activeField === "brideName" ? "listening" : ""}`}
+                  onClick={() => handleVoiceInput("brideName", setBrideName)}
+                  aria-label="Voice input for bride name"
+                >
+                  <svg className="voice-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -232,25 +260,39 @@ export default function InputScreen({ onGenerate, error }) {
         {/* Venue Section */}
         <div className="form-group">
           <label htmlFor="venue">Venue & City / स्थान</label>
-          <input
-            type="text"
-            id="venue"
-            value={venue}
-            onChange={(e) => setVenue(e.target.value)}
-            placeholder="e.g., Hotel Rambagh Palace, Jaipur"
-            autoComplete="off"
-            required
-          />
+          <div className="input-with-voice">
+            <input
+              type="text"
+              id="venue"
+              value={venue}
+              onChange={(e) => setVenue(e.target.value)}
+              placeholder="e.g., Hotel Rambagh Palace, Jaipur"
+              autoComplete="off"
+              required
+            />
+            {isSupported && (
+              <button
+                type="button"
+                className={`voice-btn ${isListening && activeField === "venue" ? "listening" : ""}`}
+                onClick={() => handleVoiceInput("venue", setVenue)}
+                aria-label="Voice input for venue"
+              >
+                <svg className="voice-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Photo Upload Section */}
         <div className="form-group">
-          <label>Photos / तस्वीरें</label>
+          <label>Photo / तस्वीर</label>
           <input
             type="file"
             ref={fileInputRef}
             accept="image/*"
-            multiple
             onChange={handleFileChange}
             style={{ display: "none" }}
           />
@@ -261,9 +303,9 @@ export default function InputScreen({ onGenerate, error }) {
         <button
           type="submit"
           className="generate-btn"
-          disabled={photos.length === 0}
+          disabled={!hasPhoto}
         >
-          Generate Invite
+          Generate Invite (निमंत्रण बनाएं)
         </button>
       </form>
     </div>

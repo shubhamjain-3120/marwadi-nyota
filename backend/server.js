@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
@@ -33,54 +34,43 @@ app.get("/api/health", (req, res) => {
 // Main generation endpoint
 app.post(
   "/api/generate",
-  upload.fields([
-    { name: "photo1", maxCount: 1 },
-    { name: "photo2", maxCount: 1 },
-  ]),
+  upload.single("photo"),
   async (req, res) => {
+    // #region agent log
+    const fs = await import('fs');
+    fs.appendFileSync('/Users/shubhamjain/wedding-invite-mvp/.cursor/debug.log', JSON.stringify({location:'server.js:/api/generate:entry',message:'Generate endpoint called',data:{hasFile:!!req.file},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})+'\n');
+    // #endregion
     try {
-      const { mode } = req.body;
-      const files = req.files;
+      const photo = req.file;
 
-      // Validate inputs
-      if (!files?.photo1?.[0]) {
+      // Validate input - require couple photo
+      if (!photo) {
         return res.status(400).json({
           success: false,
-          error: "At least one photo is required",
+          error: "Couple photo is required",
         });
       }
 
-      if (!mode || !["couple", "individual"].includes(mode)) {
-        return res.status(400).json({
-          success: false,
-          error: "Mode must be 'couple' or 'individual'",
-        });
-      }
+      console.log(`[Server] Generating wedding portrait from couple photo`);
 
-      // For individual mode, require two photos
-      if (mode === "individual" && !files?.photo2?.[0]) {
-        return res.status(400).json({
-          success: false,
-          error: "Two photos required for individual mode",
-        });
-      }
-
-      // Collect photos
-      const photos = [files.photo1[0]];
-      if (files.photo2?.[0]) {
-        photos.push(files.photo2[0]);
-      }
-
-      console.log(`[Server] Generating ${mode} mode with ${photos.length} photo(s)`);
-
-      // Generate characters using Gemini
-      const result = await generateWeddingCharacters(photos, mode);
+      // Generate characters using Gemini (extracts features then generates)
+      const result = await generateWeddingCharacters(photo);
 
       res.json({
         success: true,
         characterImage: `data:${result.mimeType};base64,${result.imageData}`,
+        evaluation: result.evaluation ? {
+          score: result.evaluation.score,
+          passed: result.evaluation.passed,
+          hardRulesPassed: result.evaluation.hardRulesPassed,
+          issues: result.evaluation.details?.issues || []
+        } : null
       });
     } catch (error) {
+      // #region agent log
+      const fs2 = await import('fs');
+      fs2.appendFileSync('/Users/shubhamjain/wedding-invite-mvp/.cursor/debug.log', JSON.stringify({location:'server.js:/api/generate:error',message:'Generation error caught in server',data:{errorName:error.name,errorMessage:error.message,errorStack:error.stack?.slice(0,800)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})+'\n');
+      // #endregion
       console.error("[Server] Generation error:", error);
 
       // After max retries, return error to client
@@ -103,5 +93,6 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`[Server] Running on http://localhost:${PORT}`);
+  console.log(`[Server] OpenAI API Key: ${process.env.OPENAI_API_KEY ? "Set" : "NOT SET"}`);
   console.log(`[Server] Gemini API Key: ${process.env.GEMINI_API_KEY ? "Set" : "NOT SET"}`);
 });
