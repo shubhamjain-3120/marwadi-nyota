@@ -8,6 +8,13 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["fonts/**/*", "assets/**/*"],
+      workbox: {
+        // Exclude large WASM files from precaching (they'll be loaded on demand)
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp,woff,woff2}'],
+        // Exclude WASM and large ML model files
+        globIgnores: ['**/*.wasm', '**/ort*.js', '**/ort*.mjs'],
+      },
       manifest: {
         name: "Wedding Invite Generator",
         short_name: "WedInvite",
