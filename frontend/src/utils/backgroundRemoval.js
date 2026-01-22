@@ -12,6 +12,10 @@
  * The library is only loaded when actually needed.
  */
 
+import { createDevLogger } from "./devLogger";
+
+const logger = createDevLogger("BgRemoval");
+
 // Lazy-loaded module reference
 let removeBackgroundFn = null;
 let loadingPromise = null;
@@ -37,16 +41,23 @@ const REMOVAL_CONFIG = {
  */
 async function loadLibrary() {
   if (removeBackgroundFn) {
+    logger.log("Library already loaded, using cached reference");
     return removeBackgroundFn;
   }
   
   if (loadingPromise) {
+    logger.log("Library loading in progress, waiting...");
     return loadingPromise;
   }
   
+  logger.log("Loading library dynamically...");
   console.log("[BgRemoval] Loading library dynamically...");
+  const startTime = performance.now();
+  
   loadingPromise = import("@imgly/background-removal").then((module) => {
     removeBackgroundFn = module.removeBackground;
+    const duration = performance.now() - startTime;
+    logger.log("Library loaded", { duration: `${duration.toFixed(0)}ms` });
     console.log("[BgRemoval] Library loaded");
     return removeBackgroundFn;
   });
@@ -90,47 +101,52 @@ function blobToDataURL(blob) {
  * @returns {Promise<string>} - Base64 data URL of the image with transparent background
  */
 export async function removeImageBackground(imageDataURL) {
-  // #region agent log
-  fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backgroundRemoval.js:removeImageBackground:start',message:'Starting background removal',data:{inputLength:imageDataURL?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
+  logger.log("Starting background removal", {
+    inputLength: imageDataURL?.length,
+  });
   console.log("[BgRemoval] Starting background removal...");
   const startTime = performance.now();
 
   try {
     // Load library dynamically if not already loaded
+    logger.log("Step 1: Loading library");
     const removeBackground = await loadLibrary();
     
     // Convert data URL to Blob
+    logger.log("Step 2: Converting data URL to Blob");
     const inputBlob = dataURLToBlob(imageDataURL);
+    logger.log("Step 2 complete: Input prepared", {
+      inputSize: `${(inputBlob.size / 1024).toFixed(1)} KB`,
+    });
     console.log(`[BgRemoval] Input size: ${(inputBlob.size / 1024).toFixed(1)} KB`);
 
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backgroundRemoval.js:removeImageBackground:beforeRemove',message:'About to call removeBackground()',data:{inputSizeKB:(inputBlob.size/1024).toFixed(1)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-
     // Remove background
+    logger.log("Step 3: Calling removeBackground() - this may take a while...");
+    const removeStartTime = performance.now();
     const resultBlob = await removeBackground(inputBlob, REMOVAL_CONFIG);
+    const removeDuration = performance.now() - removeStartTime;
 
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backgroundRemoval.js:removeImageBackground:afterRemove',message:'removeBackground() returned',data:{resultSizeKB:(resultBlob.size/1024).toFixed(1)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
+    logger.log("Step 3 complete: Background removed", {
+      processingTime: `${removeDuration.toFixed(0)}ms`,
+      resultSize: `${(resultBlob.size / 1024).toFixed(1)} KB`,
+    });
 
     // Convert result back to data URL
+    logger.log("Step 4: Converting result to data URL");
     const resultDataURL = await blobToDataURL(resultBlob);
 
     const duration = performance.now() - startTime;
+    logger.log("Background removal complete", {
+      totalDuration: `${duration.toFixed(0)}ms`,
+      inputSize: `${(inputBlob.size / 1024).toFixed(1)} KB`,
+      outputSize: `${(resultBlob.size / 1024).toFixed(1)} KB`,
+    });
     console.log(`[BgRemoval] Complete in ${duration.toFixed(0)}ms`);
     console.log(`[BgRemoval] Output size: ${(resultBlob.size / 1024).toFixed(1)} KB`);
 
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backgroundRemoval.js:removeImageBackground:done',message:'Background removal complete',data:{durationMs:duration.toFixed(0),outputSizeKB:(resultBlob.size/1024).toFixed(1)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-
     return resultDataURL;
   } catch (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backgroundRemoval.js:removeImageBackground:error',message:'Background removal error',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
+    logger.error("Background removal failed", error);
     console.error("[BgRemoval] Error:", error);
     throw new Error(`Background removal failed: ${error.message}`);
   }

@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
+import { createDevLogger } from "../utils/devLogger";
+
+const logger = createDevLogger("InputScreen");
 
 /**
  * Phase 6: Single Photo Mode
@@ -13,6 +16,7 @@ import useSpeechRecognition from "../hooks/useSpeechRecognition";
 
 // LocalStorage key for caching form data
 const CACHE_KEY = "wedding-invite-form-cache";
+const DEV_MODE_KEY = "wedding-invite-dev-mode";
 
 // Format date for invite display
 function formatDateForInvite(isoDate) {
@@ -62,6 +66,26 @@ export default function InputScreen({ onGenerate, error }) {
   // Photo state - single photo (couple photo)
   const [photo, setPhoto] = useState(null);
 
+  // Dev mode toggle - use local character file instead of API
+  const [devMode, setDevMode] = useState(() => {
+    try {
+      return localStorage.getItem(DEV_MODE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [characterFile, setCharacterFile] = useState(null);
+  const characterFileInputRef = useRef(null);
+
+  // Persist dev mode preference
+  useEffect(() => {
+    try {
+      localStorage.setItem(DEV_MODE_KEY, devMode ? "true" : "false");
+    } catch {
+      // ignore
+    }
+  }, [devMode]);
+
   const fileInputRef = useRef(null);
 
   // Voice input
@@ -110,27 +134,79 @@ export default function InputScreen({ onGenerate, error }) {
     setPhoto(null);
   };
 
+  // Handle character file selection for dev mode
+  const handleCharacterFileChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setCharacterFile(files[0]);
+    e.target.value = "";
+  };
+
+  // Create Object URL for character file preview
+  const characterFileUrl = useMemo(() => {
+    return characterFile ? URL.createObjectURL(characterFile) : null;
+  }, [characterFile]);
+
+  // Cleanup character file URL
+  useEffect(() => {
+    return () => {
+      if (characterFileUrl) URL.revokeObjectURL(characterFileUrl);
+    };
+  }, [characterFileUrl]);
+
   // Handle form submission
   const handleSubmit = (e) => {
     e.preventDefault();
 
+    logger.log("Form submission started", {
+      devMode,
+      hasPhoto: !!photo,
+      hasCharacterFile: !!characterFile,
+    });
+
     if (!brideName.trim() || !groomName.trim() || !weddingDate || !venue.trim()) {
+      logger.warn("Form validation", "Missing required fields");
       alert("Please fill all fields");
       return;
     }
 
-    if (!photo) {
-      alert("Please upload a couple photo");
-      return;
+    if (devMode) {
+      // In dev mode, only character file is required (not the photo)
+      if (!characterFile) {
+        logger.warn("Form validation", "Dev mode requires character file");
+        alert("Dev mode is enabled - please upload a character file");
+        return;
+      }
+    } else {
+      // In normal mode, photo is required
+      if (!photo) {
+        logger.warn("Form validation", "Normal mode requires photo");
+        alert("Please upload a couple photo");
+        return;
+      }
     }
 
-    onGenerate({
+    const formData = {
       brideName: brideName.trim(),
       groomName: groomName.trim(),
       date: formatDateForInvite(weddingDate),
       venue: venue.trim(),
       photo, // Single couple photo
+      devMode, // Whether to skip API
+      characterFile: devMode ? characterFile : null, // Character file for dev mode
+    };
+
+    logger.log("Form validation passed, calling onGenerate", {
+      brideName: formData.brideName,
+      groomName: formData.groomName,
+      date: formData.date,
+      venue: formData.venue,
+      devMode: formData.devMode,
+      photoSize: photo ? `${(photo.size / 1024).toFixed(1)} KB` : null,
+      characterFileSize: characterFile ? `${(characterFile.size / 1024).toFixed(1)} KB` : null,
     });
+
+    onGenerate(formData);
   };
 
   // Render photo preview section
@@ -286,6 +362,56 @@ export default function InputScreen({ onGenerate, error }) {
           </div>
         </div>
 
+        {/* Dev Mode Toggle */}
+        <div className="form-group">
+          <div className="toggle-row">
+            <label htmlFor="devMode" className="toggle-label">
+              Dev Mode (Use Local Character File)
+            </label>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={devMode}
+              className={`toggle-switch ${devMode ? "toggle-on" : ""}`}
+              onClick={() => setDevMode(!devMode)}
+            >
+              <span className="toggle-knob" />
+            </button>
+          </div>
+          {devMode && (
+            <div className="dev-mode-section">
+              <input
+                type="file"
+                ref={characterFileInputRef}
+                accept="image/*"
+                onChange={handleCharacterFileChange}
+                style={{ display: "none" }}
+              />
+              {!characterFile ? (
+                <button
+                  type="button"
+                  className="upload-btn"
+                  onClick={() => characterFileInputRef.current?.click()}
+                >
+                  <span className="upload-text">Upload Character File</span>
+                  <span className="upload-hint">PNG with transparent background recommended</span>
+                </button>
+              ) : (
+                <div className="character-file-preview">
+                  <img src={characterFileUrl} alt="Character preview" />
+                  <button
+                    type="button"
+                    className="change-photos-btn"
+                    onClick={() => setCharacterFile(null)}
+                  >
+                    Change Character File
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Photo Upload Section */}
         <div className="form-group">
           <label>Photo / तस्वीर</label>
@@ -303,7 +429,7 @@ export default function InputScreen({ onGenerate, error }) {
         <button
           type="submit"
           className="generate-btn"
-          disabled={!hasPhoto}
+          disabled={devMode ? !characterFile : !hasPhoto}
         >
           Generate Invite (निमंत्रण बनाएं)
         </button>

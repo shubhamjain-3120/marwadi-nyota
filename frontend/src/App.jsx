@@ -2,8 +2,14 @@ import { useState, useCallback } from "react";
 import InputScreen from "./components/InputScreen";
 import LoadingScreen from "./components/LoadingScreen";
 import ResultScreen from "./components/ResultScreen";
-import { composeInvite } from "./utils/canvasComposer";
+import { composeVideoInvite } from "./utils/videoComposer";
 import { removeImageBackground } from "./utils/backgroundRemoval";
+import { createDevLogger } from "./utils/devLogger";
+
+const logger = createDevLogger("App");
+
+// API URL - uses environment variable in production, empty string (relative) in dev
+const API_URL = import.meta.env.VITE_API_URL || "";
 
 const SCREENS = {
   INPUT: "input",
@@ -32,93 +38,143 @@ export default function App() {
     setLoadingCompleted(false);
     setError(null);
 
+    logger.log("Generation started", {
+      devMode: data.devMode,
+      brideName: data.brideName,
+      groomName: data.groomName,
+      hasPhoto: !!data.photo,
+      hasCharacterFile: !!data.characterFile,
+    });
+
     try {
-      // Prepare form data for API - single couple photo
-      const apiFormData = new FormData();
-      apiFormData.append("photo", data.photo); // Couple photo
+      let characterImage;
 
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleGenerate:1',message:'Starting generation - calling backend API',data:{hasPhoto:!!data.photo},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
+      // Dev mode: use provided character file directly (skip API)
+      if (data.devMode && data.characterFile) {
+        logger.log("Step 1: Using local character file (dev mode)", {
+          fileName: data.characterFile.name,
+          fileSize: `${(data.characterFile.size / 1024).toFixed(1)} KB`,
+          fileType: data.characterFile.type,
+        });
+        console.log("[App] Dev mode enabled - using local character file");
+        
+        // Convert the file to a base64 data URL
+        characterImage = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error("Failed to read character file"));
+          reader.readAsDataURL(data.characterFile);
+        });
 
-      console.log("[App] Calling backend API...");
+        logger.log("Step 1 complete: Character file loaded as data URL", {
+          dataUrlLength: characterImage.length,
+        });
+        console.log("[App] Character file loaded, skipping API and background removal");
+      } else {
+        // Normal mode: call backend API
+        // Prepare form data for API - single couple photo
+        const apiFormData = new FormData();
+        apiFormData.append("photo", data.photo); // Couple photo
 
-      // Call backend API
-      const response = await fetch("/api/generate", {
-        method: "POST",
-        body: apiFormData,
+        logger.log("Step 1: Calling backend API", {
+          photoName: data.photo.name,
+          photoSize: `${(data.photo.size / 1024).toFixed(1)} KB`,
+          photoType: data.photo.type,
+        });
+        console.log("[App] Calling backend API...");
+
+        // Call backend API
+        const startApiCall = performance.now();
+        const response = await fetch(`${API_URL}/api/generate`, {
+          method: "POST",
+          body: apiFormData,
+        });
+
+        logger.log("Step 1 response received", {
+          status: response.status,
+          ok: response.ok,
+          duration: `${(performance.now() - startApiCall).toFixed(0)}ms`,
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+          logger.error("Step 1 failed", result.error || "Generation failed");
+          throw new Error(result.error || "Generation failed");
+        }
+
+        logger.log("Step 1 complete: Backend returned success", {
+          hasCharacterImage: !!result.characterImage,
+          imageLength: result.characterImage?.length,
+          evaluationScore: result.evaluation?.score,
+          evaluationPassed: result.evaluation?.passed,
+        });
+        console.log("[App] Received image from backend, removing background...");
+
+        // Phase 4: Remove background from AI-generated image
+        characterImage = result.characterImage;
+        
+        logger.log("Step 2: Starting background removal");
+        const startBgRemoval = performance.now();
+        try {
+          characterImage = await removeImageBackground(result.characterImage);
+          logger.log("Step 2 complete: Background removal successful", {
+            outputLength: characterImage?.length,
+            duration: `${(performance.now() - startBgRemoval).toFixed(0)}ms`,
+          });
+          console.log("[App] Background removal complete");
+        } catch (bgError) {
+          // If background removal fails, use the original image
+          // (Gemini may have produced a reasonable transparent background)
+          logger.warn("Step 2", `Background removal failed, using original: ${bgError.message}`);
+          console.warn("[App] Background removal failed, using original:", bgError.message);
+        }
+      }
+
+      logger.log("Step 3: Starting video composition", {
+        brideName: data.brideName,
+        groomName: data.groomName,
+        date: data.date,
+        venue: data.venue,
+        characterImageLength: characterImage?.length,
       });
+      console.log("[App] Composing video invite...");
 
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleGenerate:2',message:'Backend API response received',data:{status:response.status,ok:response.ok},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
-
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || "Generation failed");
-      }
-
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleGenerate:3',message:'Backend returned success, starting background removal',data:{hasCharacterImage:!!result.characterImage,imageLength:result.characterImage?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-
-      console.log("[App] Received image from backend, removing background...");
-
-      // Phase 4: Remove background from AI-generated image
-      let characterImage = result.characterImage;
-      try {
-        characterImage = await removeImageBackground(result.characterImage);
-        // #region agent log
-        fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleGenerate:4',message:'Background removal complete',data:{outputLength:characterImage?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-        console.log("[App] Background removal complete");
-      } catch (bgError) {
-        // If background removal fails, use the original image
-        // (Gemini may have produced a reasonable transparent background)
-        // #region agent log
-        fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleGenerate:4b',message:'Background removal failed, using original',data:{error:bgError.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-        console.warn("[App] Background removal failed, using original:", bgError.message);
-      }
-
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleGenerate:5',message:'Starting canvas composition',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
-
-      console.log("[App] Composing final invite...");
-
-      // Compose final invite using canvas
-      const inviteDataUrl = await composeInvite({
+      // Compose final invite as video with character overlay
+      const startVideoCompose = performance.now();
+      const videoBlob = await composeVideoInvite({
         characterImage,
         brideName: data.brideName,
         groomName: data.groomName,
         date: data.date,
         venue: data.venue,
+        onProgress: (progress) => {
+          logger.log(`Video composition progress: ${progress}%`);
+          console.log(`[App] Video composition progress: ${progress}%`);
+        },
       });
 
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleGenerate:6',message:'Canvas composition complete, setting final invite',data:{inviteLength:inviteDataUrl?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
+      logger.log("Step 3 complete: Video composition finished", {
+        videoSize: `${(videoBlob?.size / 1024 / 1024).toFixed(2)} MB`,
+        duration: `${(performance.now() - startVideoCompose).toFixed(0)}ms`,
+      });
 
-      setFinalInvite(inviteDataUrl);
+      setFinalInvite(videoBlob);
 
+      logger.log("Step 4: Showing completion state");
       console.log("[App] Generation complete! Showing 100% briefly...");
 
       // Jump progress to 100% and wait briefly before transitioning
       setLoadingCompleted(true);
       await new Promise((resolve) => setTimeout(resolve, COMPLETION_DELAY_MS));
 
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleGenerate:7',message:'Transitioning to result screen',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
-
+      logger.log("Step 5: Transitioning to result screen");
       setScreen(SCREENS.RESULT);
 
+      logger.log("Generation complete - all steps successful");
+
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7245/ingest/6053f2e8-8bd0-4925-9c37-b354d1444919',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.jsx:handleGenerate:error',message:'Generation error caught',data:{error:err.message,stack:err.stack?.slice(0,500)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-      // #endregion
+      logger.error("Generation failed", err);
       console.error("[App] Generation error:", err);
       setError(err.message);
       setScreen(SCREENS.INPUT);
@@ -140,7 +196,7 @@ export default function App() {
       {screen === SCREENS.LOADING && <LoadingScreen completed={loadingCompleted} />}
       {screen === SCREENS.RESULT && (
         <ResultScreen
-          inviteImage={finalInvite}
+          inviteVideo={finalInvite}
           brideName={formData?.brideName}
           groomName={formData?.groomName}
           onReset={handleReset}

@@ -1,50 +1,124 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { createDevLogger } from "../utils/devLogger";
 
-export default function ResultScreen({ inviteImage, brideName, groomName, onReset }) {
+const logger = createDevLogger("ResultScreen");
+
+export default function ResultScreen({ inviteVideo, brideName, groomName, onReset }) {
+  const [videoUrl, setVideoUrl] = useState(null);
+
+  // Create object URL from blob when video changes
+  useEffect(() => {
+    logger.log("Video prop received", {
+      type: inviteVideo instanceof Blob ? "Blob" : typeof inviteVideo,
+      size: inviteVideo instanceof Blob ? `${(inviteVideo.size / 1024 / 1024).toFixed(2)} MB` : "N/A",
+    });
+
+    if (inviteVideo instanceof Blob) {
+      const url = URL.createObjectURL(inviteVideo);
+      setVideoUrl(url);
+      logger.log("Video URL created from Blob", { url: url.slice(0, 50) + "..." });
+      
+      // Cleanup URL on unmount or when video changes
+      return () => {
+        logger.log("Cleaning up video URL");
+        URL.revokeObjectURL(url);
+      };
+    } else if (typeof inviteVideo === 'string') {
+      // Already a URL
+      setVideoUrl(inviteVideo);
+      logger.log("Using existing video URL");
+    }
+  }, [inviteVideo]);
+
   const handleDownload = useCallback(() => {
+    logger.log("Download initiated", {
+      brideName,
+      groomName,
+      videoSize: inviteVideo instanceof Blob ? `${(inviteVideo.size / 1024 / 1024).toFixed(2)} MB` : "N/A",
+    });
+
+    if (!inviteVideo) {
+      logger.warn("Download", "No video available");
+      return;
+    }
+    
     const link = document.createElement("a");
-    link.href = inviteImage;
-    link.download = `wedding-invite-${groomName}-${brideName}.png`;
+    
+    if (inviteVideo instanceof Blob) {
+      link.href = URL.createObjectURL(inviteVideo);
+    } else {
+      link.href = inviteVideo;
+    }
+    
+    link.download = `wedding-invite-${groomName}-${brideName}.mp4`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [inviteImage, brideName, groomName]);
+    
+    // Cleanup the temporary URL
+    if (inviteVideo instanceof Blob) {
+      URL.revokeObjectURL(link.href);
+    }
+
+    logger.log("Download complete", { filename: link.download });
+  }, [inviteVideo, brideName, groomName]);
 
   const handleShare = useCallback(async () => {
+    logger.log("Share initiated", { brideName, groomName });
+
     try {
-      // Convert data URL to blob for sharing
-      const response = await fetch(inviteImage);
-      const blob = await response.blob();
-      const file = new File([blob], `wedding-invite-${groomName}-${brideName}.png`, {
-        type: "image/png",
-      });
+      let file;
+      
+      if (inviteVideo instanceof Blob) {
+        file = new File([inviteVideo], `wedding-invite-${groomName}-${brideName}.mp4`, {
+          type: "video/mp4",
+        });
+        logger.log("Created file from Blob for sharing");
+      } else {
+        // Convert URL to blob first
+        logger.log("Converting URL to blob for sharing");
+        const response = await fetch(inviteVideo);
+        const blob = await response.blob();
+        file = new File([blob], `wedding-invite-${groomName}-${brideName}.mp4`, {
+          type: "video/mp4",
+        });
+      }
 
       // Check if Web Share API is available and can share files
-      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      const canShare = navigator.share && navigator.canShare?.({ files: [file] });
+      logger.log("Checking share capability", { canShare });
+
+      if (canShare) {
+        logger.log("Using Web Share API");
         await navigator.share({
           title: `${groomName} & ${brideName} Wedding Invite`,
           text: `You're invited to the wedding of ${groomName} & ${brideName}!`,
           files: [file],
         });
+        logger.log("Share completed successfully");
       } else {
-        // Fallback: Open WhatsApp with text (image needs manual attachment)
+        // Fallback: Open WhatsApp with text (video needs manual attachment)
+        logger.log("Falling back to WhatsApp share");
         const text = encodeURIComponent(
           `You're invited to the wedding of ${groomName} & ${brideName}!`
         );
         window.open(`https://wa.me/?text=${text}`, "_blank");
-        alert("Download the image and attach it to your WhatsApp message");
+        alert("Download the video and attach it to your WhatsApp message");
       }
     } catch (err) {
       if (err.name !== "AbortError") {
+        logger.error("Share failed", err);
         console.error("Share error:", err);
         // Fallback to WhatsApp
         const text = encodeURIComponent(
           `You're invited to the wedding of ${groomName} & ${brideName}!`
         );
         window.open(`https://wa.me/?text=${text}`, "_blank");
+      } else {
+        logger.log("Share cancelled by user");
       }
     }
-  }, [inviteImage, brideName, groomName]);
+  }, [inviteVideo, brideName, groomName]);
 
   return (
     <div className="result-screen">
@@ -53,8 +127,20 @@ export default function ResultScreen({ inviteImage, brideName, groomName, onRese
         <p className="hindi-subtitle">आपका शादी का निमंत्रण</p>
       </header>
 
-      <div className="invite-preview">
-        <img src={inviteImage} alt="Wedding Invite" className="invite-image" />
+      <div className="invite-preview video-preview">
+        {videoUrl ? (
+          <video 
+            src={videoUrl} 
+            className="invite-video" 
+            controls 
+            autoPlay 
+            loop 
+            muted
+            playsInline
+          />
+        ) : (
+          <div className="video-loading">Loading video...</div>
+        )}
       </div>
 
       <div className="action-buttons">
@@ -64,7 +150,7 @@ export default function ResultScreen({ inviteImage, brideName, groomName, onRese
             <polyline points="7 10 12 15 17 10"/>
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          Download (डाउनलोड)
+          Download Video (डाउनलोड)
         </button>
         <button className="share-btn" onClick={handleShare}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">

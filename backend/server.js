@@ -3,6 +3,9 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import { generateWeddingCharacters } from "./gemini.js";
+import { createDevLogger, isDevMode } from "./devLogger.js";
+
+const logger = createDevLogger("Server");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -23,12 +26,16 @@ const upload = multer({
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  credentials: true
+}));
 app.use(express.json());
 
 // Health check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
+  logger.log("Health check requested");
+  res.json({ status: "ok", devMode: isDevMode() });
 });
 
 // Main generation endpoint
@@ -36,25 +43,43 @@ app.post(
   "/api/generate",
   upload.single("photo"),
   async (req, res) => {
-    // #region agent log
-    const fs = await import('fs');
-    fs.appendFileSync('/Users/shubhamjain/wedding-invite-mvp/.cursor/debug.log', JSON.stringify({location:'server.js:/api/generate:entry',message:'Generate endpoint called',data:{hasFile:!!req.file},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})+'\n');
-    // #endregion
+    const requestId = Date.now().toString(36);
+    const startTime = performance.now();
+    
+    logger.log(`[${requestId}] Generate endpoint called`, {
+      hasFile: !!req.file,
+      fileSize: req.file ? `${(req.file.size / 1024).toFixed(1)} KB` : null,
+      fileMimeType: req.file?.mimetype,
+    });
+
     try {
       const photo = req.file;
 
       // Validate input - require couple photo
       if (!photo) {
+        logger.warn(`[${requestId}] Validation failed`, "No photo provided");
         return res.status(400).json({
           success: false,
           error: "Couple photo is required",
         });
       }
 
+      logger.log(`[${requestId}] Step 1: Starting generation pipeline`, {
+        photoSize: `${(photo.size / 1024).toFixed(1)} KB`,
+        photoMimeType: photo.mimetype,
+      });
       console.log(`[Server] Generating wedding portrait from couple photo`);
 
       // Generate characters using Gemini (extracts features then generates)
-      const result = await generateWeddingCharacters(photo);
+      const result = await generateWeddingCharacters(photo, requestId);
+
+      const totalDuration = performance.now() - startTime;
+      logger.log(`[${requestId}] Generation complete`, {
+        totalDuration: `${totalDuration.toFixed(0)}ms`,
+        imageSizeKB: `${(result.imageData.length * 0.75 / 1024).toFixed(1)} KB`,
+        evaluationScore: result.evaluation?.score,
+        evaluationPassed: result.evaluation?.passed,
+      });
 
       res.json({
         success: true,
@@ -67,10 +92,8 @@ app.post(
         } : null
       });
     } catch (error) {
-      // #region agent log
-      const fs2 = await import('fs');
-      fs2.appendFileSync('/Users/shubhamjain/wedding-invite-mvp/.cursor/debug.log', JSON.stringify({location:'server.js:/api/generate:error',message:'Generation error caught in server',data:{errorName:error.name,errorMessage:error.message,errorStack:error.stack?.slice(0,800)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})+'\n');
-      // #endregion
+      const totalDuration = performance.now() - startTime;
+      logger.error(`[${requestId}] Generation failed after ${totalDuration.toFixed(0)}ms`, error);
       console.error("[Server] Generation error:", error);
 
       // After max retries, return error to client
@@ -84,6 +107,7 @@ app.post(
 
 // Error handling middleware
 app.use((err, req, res, next) => {
+  logger.error("Unhandled error", err);
   console.error("[Server] Error:", err);
   res.status(500).json({
     success: false,
@@ -93,6 +117,11 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`[Server] Running on http://localhost:${PORT}`);
+  console.log(`[Server] Dev Mode: ${isDevMode() ? "ENABLED" : "disabled"}`);
   console.log(`[Server] OpenAI API Key: ${process.env.OPENAI_API_KEY ? "Set" : "NOT SET"}`);
   console.log(`[Server] Gemini API Key: ${process.env.GEMINI_API_KEY ? "Set" : "NOT SET"}`);
+  
+  if (isDevMode()) {
+    console.log(`[Server] Dev logging is enabled - detailed logs will be shown`);
+  }
 });
