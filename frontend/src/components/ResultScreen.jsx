@@ -1,44 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
-import { createDevLogger } from "../utils/devLogger";
-
-const logger = createDevLogger("ResultScreen");
 
 export default function ResultScreen({ inviteVideo, brideName, groomName, onReset }) {
   const [videoUrl, setVideoUrl] = useState(null);
 
   // Create object URL from blob when video changes
   useEffect(() => {
-    logger.log("Video prop received", {
-      type: inviteVideo instanceof Blob ? "Blob" : typeof inviteVideo,
-      size: inviteVideo instanceof Blob ? `${(inviteVideo.size / 1024 / 1024).toFixed(2)} MB` : "N/A",
-    });
-
     if (inviteVideo instanceof Blob) {
       const url = URL.createObjectURL(inviteVideo);
       setVideoUrl(url);
-      logger.log("Video URL created from Blob", { url: url.slice(0, 50) + "..." });
       
       // Cleanup URL on unmount or when video changes
       return () => {
-        logger.log("Cleaning up video URL");
         URL.revokeObjectURL(url);
       };
     } else if (typeof inviteVideo === 'string') {
       // Already a URL
       setVideoUrl(inviteVideo);
-      logger.log("Using existing video URL");
     }
   }, [inviteVideo]);
 
   const handleDownload = useCallback(() => {
-    logger.log("Download initiated", {
-      brideName,
-      groomName,
-      videoSize: inviteVideo instanceof Blob ? `${(inviteVideo.size / 1024 / 1024).toFixed(2)} MB` : "N/A",
-    });
-
     if (!inviteVideo) {
-      logger.warn("Download", "No video available");
       return;
     }
     
@@ -59,13 +41,9 @@ export default function ResultScreen({ inviteVideo, brideName, groomName, onRese
     if (inviteVideo instanceof Blob) {
       URL.revokeObjectURL(link.href);
     }
-
-    logger.log("Download complete", { filename: link.download });
   }, [inviteVideo, brideName, groomName]);
 
   const handleShare = useCallback(async () => {
-    logger.log("Share initiated", { brideName, groomName });
-
     try {
       let file;
       
@@ -73,10 +51,8 @@ export default function ResultScreen({ inviteVideo, brideName, groomName, onRese
         file = new File([inviteVideo], `wedding-invite-${groomName}-${brideName}.mp4`, {
           type: "video/mp4",
         });
-        logger.log("Created file from Blob for sharing");
       } else {
         // Convert URL to blob first
-        logger.log("Converting URL to blob for sharing");
         const response = await fetch(inviteVideo);
         const blob = await response.blob();
         file = new File([blob], `wedding-invite-${groomName}-${brideName}.mp4`, {
@@ -86,19 +62,15 @@ export default function ResultScreen({ inviteVideo, brideName, groomName, onRese
 
       // Check if Web Share API is available and can share files
       const canShare = navigator.share && navigator.canShare?.({ files: [file] });
-      logger.log("Checking share capability", { canShare });
 
       if (canShare) {
-        logger.log("Using Web Share API");
         await navigator.share({
           title: `${groomName} & ${brideName} Wedding Invite`,
           text: `You're invited to the wedding of ${groomName} & ${brideName}!`,
           files: [file],
         });
-        logger.log("Share completed successfully");
       } else {
         // Fallback: Open WhatsApp with text (video needs manual attachment)
-        logger.log("Falling back to WhatsApp share");
         const text = encodeURIComponent(
           `You're invited to the wedding of ${groomName} & ${brideName}!`
         );
@@ -107,15 +79,12 @@ export default function ResultScreen({ inviteVideo, brideName, groomName, onRese
       }
     } catch (err) {
       if (err.name !== "AbortError") {
-        logger.error("Share failed", err);
         console.error("Share error:", err);
         // Fallback to WhatsApp
         const text = encodeURIComponent(
           `You're invited to the wedding of ${groomName} & ${brideName}!`
         );
         window.open(`https://wa.me/?text=${text}`, "_blank");
-      } else {
-        logger.log("Share cancelled by user");
       }
     }
   }, [inviteVideo, brideName, groomName]);

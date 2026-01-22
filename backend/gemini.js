@@ -1,8 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
-import { createDevLogger } from "./devLogger.js";
-
-const logger = createDevLogger("Gemini");
 
 // Initialize OpenAI for photo analysis
 const openai = new OpenAI({
@@ -26,10 +23,6 @@ const genAI = useVertexAI
  * Analyze a couple photo using ChatGPT (GPT-4 Vision) to extract detailed descriptions
  */
 async function analyzePhoto(photo, requestId = "") {
-  logger.log(`[${requestId}] Starting photo analysis with ChatGPT`, {
-    photoMimetype: photo?.mimetype,
-    photoBufferLen: photo?.buffer?.length,
-  });
   const analysisPrompt = `You are an expert visual analyst extracting structured human appearance attributes from a single photo of a couple (bride and groom).
 Your goal is to infer the most likely visible physical attributes based strictly on what is observable in the image.
 
@@ -219,9 +212,6 @@ Choose from:
     },
   }];
 
-  logger.log(`[${requestId}] Calling OpenAI GPT-4o for photo analysis`);
-  const startTime = performance.now();
-
   let response;
   try {
     response = await openai.chat.completions.create({
@@ -238,54 +228,27 @@ Choose from:
       max_tokens: 1000,
     });
   } catch (apiError) {
-    logger.error(`[${requestId}] OpenAI API call failed`, apiError);
     throw apiError;
   }
 
-  const apiDuration = performance.now() - startTime;
-  logger.log(`[${requestId}] OpenAI response received`, {
-    duration: `${apiDuration.toFixed(0)}ms`,
-    hasChoices: !!response.choices,
-    choicesLen: response.choices?.length,
-    finishReason: response.choices?.[0]?.finish_reason,
-    totalTokens: response.usage?.total_tokens,
-  });
-
   const responseText = response.choices[0]?.message?.content;
-  
-  logger.log(`[${requestId}] Parsing response`, {
-    responseTextLen: responseText?.length,
-    responseTextPreview: responseText?.slice(0, 200) + "...",
-  });
 
   if (!responseText) {
-    logger.error(`[${requestId}] No response text from ChatGPT`, "Empty response");
     throw new Error("ChatGPT did not return a response");
   }
 
   // Extract JSON from response
   const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-  
-  logger.log(`[${requestId}] JSON extraction`, {
-    jsonMatchFound: !!jsonMatch,
-    jsonMatchLen: jsonMatch?.[0]?.length,
-  });
 
   if (!jsonMatch) {
     // Check if this is a content policy refusal
     if (responseText.toLowerCase().includes("sorry") || responseText.toLowerCase().includes("can't") || responseText.toLowerCase().includes("cannot")) {
-      logger.error(`[${requestId}] Content policy refusal detected`, responseText.slice(0, 200));
       throw new Error("The AI could not analyze the photos. Please try with different photos or ensure faces are clearly visible.");
     }
-    logger.error(`[${requestId}] Failed to parse JSON from response`, responseText.slice(0, 300));
     throw new Error("Failed to parse photo analysis");
   }
 
   const parsed = JSON.parse(jsonMatch[0]);
-  logger.log(`[${requestId}] Photo analysis complete`, {
-    hasBride: !!parsed.bride,
-    hasGroom: !!parsed.groom,
-  });
 
   return parsed;
 }
@@ -295,7 +258,6 @@ Choose from:
  * Returns { passed: boolean, score: number, hardRulesFailed: string[], details: object }
  */
 async function evaluateGeneratedImage(imageBase64, mimeType, requestId = "") {
-  logger.log(`[${requestId}] Starting image evaluation with GPT-4o`);
   const evaluationPrompt = `You are an expert image quality evaluator for wedding invitation illustrations.
 Evaluate the provided image against this strict framework and return a structured JSON response.
 
@@ -399,8 +361,6 @@ Groom (17.5 pts): height, skin_color, hairstyle, eye_color, body_shape, facial_h
 
 Be strict but fair. Score accurately based on what you observe.`;
 
-  const startTime = performance.now();
-  
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
@@ -421,24 +381,14 @@ Be strict but fair. Score accurately based on what you observe.`;
       max_tokens: 2000,
     });
 
-    const evalDuration = performance.now() - startTime;
-    logger.log(`[${requestId}] Evaluation response received`, {
-      duration: `${evalDuration.toFixed(0)}ms`,
-      totalTokens: response.usage?.total_tokens,
-    });
-
     const responseText = response.choices[0]?.message?.content;
     if (!responseText) {
-      logger.error(`[${requestId}] Evaluation returned no response`, "Empty response");
-      console.error("[Evaluation] GPT did not return a response");
       return { passed: false, score: 0, hardRulesFailed: ["Evaluation failed"], details: null };
     }
 
     // Extract JSON from response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      logger.error(`[${requestId}] Failed to parse evaluation JSON`, responseText.slice(0, 200));
-      console.error("[Evaluation] Failed to parse evaluation response");
       return { passed: false, score: 0, hardRulesFailed: ["Parse error"], details: null };
     }
 
@@ -451,22 +401,6 @@ Be strict but fair. Score accurately based on what you observe.`;
     // Production threshold: 85 minimum, and all hard rules must pass
     const passed = hardRulesPassed && totalScore >= 85;
 
-    logger.log(`[${requestId}] Evaluation complete`, {
-      score: totalScore,
-      hardRulesPassed,
-      passed,
-      hardRulesFailed: hardRulesFailed.length > 0 ? hardRulesFailed : "none",
-      issues: evaluation.issues?.length > 0 ? evaluation.issues : "none",
-    });
-
-    console.log(`[Evaluation] Score: ${totalScore}/100, Hard rules passed: ${hardRulesPassed}, Overall: ${passed ? 'PASS' : 'FAIL'}`);
-    if (hardRulesFailed.length > 0) {
-      console.log(`[Evaluation] Hard rule violations: ${hardRulesFailed.join(', ')}`);
-    }
-    if (evaluation.issues?.length > 0) {
-      console.log(`[Evaluation] Issues: ${evaluation.issues.join(', ')}`);
-    }
-
     return {
       passed,
       score: totalScore,
@@ -475,8 +409,6 @@ Be strict but fair. Score accurately based on what you observe.`;
       details: evaluation
     };
   } catch (error) {
-    logger.error(`[${requestId}] Evaluation error`, error);
-    console.error("[Evaluation] Error during evaluation:", error.message);
     // On evaluation error, we'll consider it as failed to be safe
     return { passed: false, score: 0, hardRulesFailed: [`Evaluation error: ${error.message}`], details: null };
   }
@@ -490,20 +422,12 @@ async function generateWithEvaluation(descriptions, maxAttempts = 3, requestId =
   let bestResult = null;
   let bestScore = -1;
   
-  logger.log(`[${requestId}] Starting generation with evaluation (max ${maxAttempts} attempts)`);
-  
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    logger.log(`[${requestId}] Generation attempt ${attempt}/${maxAttempts}`);
-    console.log(`[Generator] Generation attempt ${attempt}/${maxAttempts}`);
-    
     try {
       // Generate the image
-      logger.log(`[${requestId}] Calling Gemini for image generation`);
       const result = await generateWithGemini3(descriptions, requestId);
       
       // Evaluate the generated image
-      logger.log(`[${requestId}] Evaluating generated image`);
-      console.log(`[Generator] Evaluating generated image (attempt ${attempt})...`);
       const evaluation = await evaluateGeneratedImage(result.imageData, result.mimeType, requestId);
       
       // Track the best result so far
@@ -513,65 +437,33 @@ async function generateWithEvaluation(descriptions, maxAttempts = 3, requestId =
           ...result,
           evaluation
         };
-        logger.log(`[${requestId}] New best score: ${bestScore}/100`);
       }
       
       // If evaluation passes, return immediately
       if (evaluation.passed) {
-        logger.log(`[${requestId}] Image PASSED evaluation on attempt ${attempt}`, {
-          score: evaluation.score,
-        });
-        console.log(`[Generator] Image passed evaluation on attempt ${attempt} with score ${evaluation.score}/100`);
         return bestResult;
       }
       
-      // Log why it failed
-      logger.log(`[${requestId}] Attempt ${attempt} FAILED evaluation`, {
-        score: evaluation.score,
-        hardRulesPassed: evaluation.hardRulesPassed,
-        hardRulesFailed: evaluation.hardRulesFailed,
-      });
-      console.log(`[Generator] Attempt ${attempt} failed evaluation (score: ${evaluation.score}/100)`);
-      if (!evaluation.hardRulesPassed) {
-        console.log(`[Generator] Hard rule violations: ${evaluation.hardRulesFailed.join(', ')}`);
-      }
-      
       if (attempt < maxAttempts) {
-        logger.log(`[${requestId}] Waiting before retry...`);
-        console.log(`[Generator] Regenerating with original prompt...`);
         // Small delay before retry
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     } catch (error) {
-      logger.error(`[${requestId}] Attempt ${attempt} error`, error);
-      console.error(`[Generator] Attempt ${attempt} failed with error:`, error.message);
-      
       if (attempt === maxAttempts) {
         // If this was the last attempt and we have a previous result, return it
         if (bestResult) {
-          logger.log(`[${requestId}] Returning best result from previous attempts`, {
-            score: bestScore,
-          });
-          console.log(`[Generator] Returning best result from previous attempts (score: ${bestScore}/100)`);
           return bestResult;
         }
         throw error;
       }
       
       // Wait before retry on error
-      logger.log(`[${requestId}] Waiting 2s before retry after error`);
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
   
   // If we've exhausted all attempts but have a result, return the best one
   if (bestResult) {
-    logger.log(`[${requestId}] All attempts exhausted, returning best result`, {
-      score: bestScore,
-      threshold: 85,
-    });
-    console.log(`[Generator] All ${maxAttempts} attempts completed. Returning best result with score ${bestScore}/100`);
-    console.log(`[Generator] Note: Image did not meet the 85-point threshold but was the best generated`);
     return bestResult;
   }
   
@@ -581,28 +473,19 @@ async function generateWithEvaluation(descriptions, maxAttempts = 3, requestId =
 /**
  * Retry helper with exponential backoff for transient errors
  */
-async function retryWithBackoff(fn, maxRetries = 3, baseDelayMs = 2000, requestId = "") {
+async function retryWithBackoff(fn, maxRetries = 3, baseDelayMs = 2000) {
   let lastError;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      logger.log(`[${requestId}] Gemini API attempt ${attempt}/${maxRetries}`);
       const result = await fn();
-      logger.log(`[${requestId}] Gemini API attempt ${attempt} succeeded`);
       return result;
     } catch (error) {
       lastError = error;
       const isRetryable = error.status === 503 || error.status === 429 || error.message?.includes('overloaded');
-      logger.log(`[${requestId}] Gemini API attempt ${attempt} failed`, {
-        isRetryable,
-        errorStatus: error.status,
-        errorMessage: error.message?.slice(0, 200),
-      });
       if (!isRetryable || attempt === maxRetries) {
         throw error;
       }
       const delay = baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 1000;
-      logger.log(`[${requestId}] Waiting ${Math.round(delay)}ms before retry`);
-      console.log(`[Gemini3] Attempt ${attempt} failed (${error.status || 'error'}), retrying in ${Math.round(delay)}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
@@ -613,7 +496,6 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelayMs = 2000, requestI
  * Generate wedding portrait using Gemini 3 Pro Image Preview
  */
 async function generateWithGemini3(descriptions, requestId = "") {
-  logger.log(`[${requestId}] Preparing Gemini 3 Pro generation prompt`);
   // Extract values from the new structure (bride/groom with primary/alternates)
   const bride = descriptions.bride;
   const groom = descriptions.groom;
@@ -724,17 +606,7 @@ No text or logos
 
 Full-body visible, from head to toe`;
 
-  logger.log(`[${requestId}] Prompt prepared`, {
-    promptLength: prompt.length,
-    brideHeight: descriptions.bride?.height?.primary,
-    brideSkinColor: descriptions.bride?.skin_color?.primary,
-    groomHeight: descriptions.groom?.height?.primary,
-    groomSkinColor: descriptions.groom?.skin_color?.primary,
-  });
-  console.log("[Gemini3] Generating with prompt:", prompt.slice(0, 200) + "...");
-
   // Use retry logic for transient API errors (503, 429)
-  const startTime = performance.now();
   const response = await retryWithBackoff(async () => {
     return await genAI.models.generateContent({
       model: "gemini-3-pro-image-preview",
@@ -743,33 +615,19 @@ Full-body visible, from head to toe`;
         responseModalities: ["image", "text"],
       },
     });
-  }, 3, 3000, requestId);
-
-  const genDuration = performance.now() - startTime;
-  logger.log(`[${requestId}] Gemini response received`, {
-    duration: `${genDuration.toFixed(0)}ms`,
-    hasCandidates: !!response.candidates,
-    candidatesCount: response.candidates?.length,
-  });
+  }, 3, 3000);
 
   // Extract image from response
   const parts = response.candidates?.[0]?.content?.parts;
   if (!parts) {
-    logger.error(`[${requestId}] No content parts in response`, response);
     throw new Error("Gemini 3 Pro did not return any content");
   }
 
   // Find the image part in the response
   const imagePart = parts.find((part) => part.inlineData);
   if (!imagePart || !imagePart.inlineData) {
-    logger.error(`[${requestId}] No image data in response parts`, { partsCount: parts.length });
     throw new Error("Gemini 3 Pro did not return an image");
   }
-
-  logger.log(`[${requestId}] Image extracted from response`, {
-    mimeType: imagePart.inlineData.mimeType,
-    dataSizeKB: `${(imagePart.inlineData.data.length * 0.75 / 1024).toFixed(1)} KB`,
-  });
 
   return {
     imageData: imagePart.inlineData.data,
@@ -781,48 +639,11 @@ Full-body visible, from head to toe`;
  * Main function: Analyze photo with ChatGPT, generate with Gemini 3 Pro, evaluate and retry if needed
  */
 export async function generateWeddingCharacters(photo, requestId = "") {
-  const totalStartTime = performance.now();
-  
-  logger.log(`[${requestId}] ========== STARTING WEDDING PORTRAIT GENERATION ==========`);
-  console.log("[Generator] Starting wedding portrait generation");
-  
   // Step 1: Analyze photo to extract descriptions using ChatGPT
-  logger.log(`[${requestId}] STEP 1: Analyzing photo with ChatGPT`);
-  console.log("[Generator] Step 1: Analyzing photo with ChatGPT...");
-  
-  const analysisStartTime = performance.now();
   const descriptions = await analyzePhoto(photo, requestId);
-  const analysisDuration = performance.now() - analysisStartTime;
-  
-  logger.log(`[${requestId}] STEP 1 COMPLETE: Photo analysis done`, {
-    duration: `${analysisDuration.toFixed(0)}ms`,
-    brideAttributes: Object.keys(descriptions.bride || {}),
-    groomAttributes: Object.keys(descriptions.groom || {}),
-  });
-  console.log("[Generator] Photo analysis complete:", JSON.stringify(descriptions, null, 2));
 
   // Step 2: Generate with Gemini 3 Pro, evaluate with GPT-4 Vision, retry up to 3 times if needed
-  logger.log(`[${requestId}] STEP 2: Generating image with Gemini 3 Pro (with evaluation & retry)`);
-  console.log("[Generator] Step 2: Generating image with Gemini 3 Pro (with evaluation & retry)...");
-  
-  const generationStartTime = performance.now();
   const result = await generateWithEvaluation(descriptions, 3, requestId);
-  const generationDuration = performance.now() - generationStartTime;
-
-  const totalDuration = performance.now() - totalStartTime;
-  
-  logger.log(`[${requestId}] ========== GENERATION COMPLETE ==========`, {
-    totalDuration: `${totalDuration.toFixed(0)}ms`,
-    analysisDuration: `${analysisDuration.toFixed(0)}ms`,
-    generationDuration: `${generationDuration.toFixed(0)}ms`,
-    finalScore: result.evaluation?.score,
-    passed: result.evaluation?.passed,
-    imageSizeKB: `${(result.imageData.length * 0.75 / 1024).toFixed(1)} KB`,
-  });
-  
-  console.log("[Generator] Generation complete!");
-  console.log(`[Generator] Final score: ${result.evaluation?.score || 'N/A'}/100`);
-  console.log(`[Generator] Passed evaluation: ${result.evaluation?.passed ? 'YES' : 'NO (best available)'}`);
   
   return {
     imageData: result.imageData,
