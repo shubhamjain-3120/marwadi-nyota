@@ -26,3 +26,5 @@ npm-debug.log*
 
 # PWA generated files
 dev-dist/
+
+frontend/android/keystore.properties

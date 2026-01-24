@@ -30,50 +30,53 @@ async function analyzePhoto(photo, requestId = "") {
     photoMimetype: photo?.mimetype,
     photoBufferLen: photo?.buffer?.length,
   });
-  const analysisPrompt = `You are an expert visual analyst extracting structured human appearance attributes from a single photo of a couple (bride and groom).
-Your goal is to infer the most likely visible physical attributes based strictly on what is observable in the image.
+  const analysisPrompt = `You are a creative artist's assistant helping to create stylized cartoon/illustration character references for a wedding invitation artwork.
+
+A couple has provided their photo and wants a cute illustrated cartoon version of themselves for their wedding invitation. Your job is to describe the visual characteristics that an illustrator would need to capture their likeness in a stylized, artistic way.
+
+This is for ARTISTIC ILLUSTRATION purposes only - creating personalized wedding invitation art that celebrates the couple.
 
 ### Rules
 
 * Do NOT return "unknown", "not visible", or null.
-* Always prefer visual evidence over cultural assumptions.
-* Use natural human categories, not numeric RGB or overly technical values.
-* If face/body is partially occluded, infer from visible proportions, posture, and context.
+* Focus on capturing the essence and style that would make an illustration recognizable as this couple.
+* Use artistic/illustrator-friendly terminology.
+* If some features are partially visible, make reasonable artistic interpretations.
 * Output must be valid JSON only.
-* Be EXTREMELY precise and detailed for skin_color, hairstyle, and eye_size - these are critical attributes.
+* Be detailed for coloring, hairstyle, and features - these help the illustrator capture likeness.
 
 ---
 
-### Extract the following attributes
+### Describe the following artistic reference characteristics
 
-For **Bride**:
+For **Bride** (for illustration):
 
 * height
-* skin_color (be very precise - include exact shade and undertone)
+* coloring (for accurate skin tone in illustration)
 * hairstyle
 * eye_color
 * eye_size
-* body_shape
+* body_type
 * face_shape
 * spectacles
 
-For **Groom**:
+For **Groom** (for illustration):
 
 * height
-* skin_color (be very precise - include exact shade and undertone)
-* hairstyle (be very detailed - include exact style, length, texture, parting)
+* coloring (for accurate skin tone in illustration)
+* hairstyle (be very detailed - for accurate illustration)
 * eye_color
 * eye_size
-* body_shape
+* body_type
 * facial_hair_style
 * face_shape
 * spectacles
 
 ---
 
-### Attribute Guidelines
+### Artistic Reference Guidelines
 
-#### Height (relative, visual)
+#### Height (relative proportions)
 
 Choose from:
 
@@ -84,25 +87,25 @@ Choose from:
 * very tall
   Base this on body proportions and comparison between bride and groom.
 
-#### Skin color (BE VERY PRECISE)
+#### Coloring (for illustration palette)
 
-Based strictly on what is visible. Provide a DETAILED description including:
-- Exact shade: very fair, fair, light, light-medium, medium, medium-tan, tan, olive, caramel, brown, dark brown, deep brown, ebony
-- Undertone: warm (golden/yellow), cool (pink/red), neutral, olive
-- Any visible characteristics: rosy cheeks, even tone, etc.
+To help the illustrator match colors accurately, describe the coloring that would be used to paint/draw this person:
+- Base tone for illustration: very fair, fair, light, light-medium, medium, medium-tan, tan, olive, caramel, brown, dark brown, deep brown, rich brown
+- Warm or cool palette: warm (golden/peachy tones), cool (pink/rosy tones), neutral, olive-toned
+- Any helpful notes for the illustrator
 
 Example formats:
-* "light-medium skin with warm golden undertone"
-* "fair skin with cool pink undertone"
-* "medium tan skin with olive undertone"
-* "caramel brown skin with warm undertone"
-* "deep brown skin with neutral undertone"
+* "light-medium with warm golden palette"
+* "fair with cool pink undertones"
+* "medium-tan with olive-toned palette"
+* "caramel brown with warm undertones"
+* "deep brown with neutral palette"
 
-Be lighting-aware but still provide the most accurate assessment of actual skin tone.
+Consider the lighting but focus on what palette the illustrator should use.
 
-#### Hairstyle (BE VERY DETAILED, especially for Groom)
+#### Hairstyle (for accurate illustration, especially for Groom)
 
-Describe with maximum detail including:
+Describe with detail so the illustrator can capture the look:
 - Length: very short, short, medium, long, very long
 - Style: straight, wavy, curly, coily, spiky, slicked back, side-parted, center-parted, pompadour, undercut, fade, crew cut, etc.
 - Texture: fine, medium, thick, coarse
@@ -159,9 +162,9 @@ Example formats:
 * "small-medium, hooded"
 * "medium, monolid"
 
-#### Body shape
+#### Body type (for character silhouette)
 
-Choose from:
+Choose the silhouette type for the illustrated character:
 
 * slim
 * athletic
@@ -169,26 +172,19 @@ Choose from:
 * curvy
 * stocky
 * broad
-  Use clothing silhouette + posture to infer.
+  Base on visible silhouette and posture.
 
-+ #### Face shape (CRITICAL: be anatomically precise)
-+
-+ Choose ONLY one from:
-+ * oval
-+ * round
-+ * square
-+ * heart
-+ * diamond
-+ * oblong
-+
-+ Determine using ALL of:
-+ - Relative width of forehead vs jaw
-+ - Jaw angularity (rounded vs sharp)
-+ - Cheekbone prominence
-+ - Face length vs width ratio
-+
-+ Do NOT guess loosely. If borderline, choose the closest dominant geometry.
-+ Do NOT output mixed or compound labels.#### Facial hair style (groom)
+#### Face shape (for illustration proportions)
+
+Choose the face shape to guide the illustrator:
+* oval
+* round
+* square
+* heart
+* diamond
+* oblong
+
+Consider the overall proportions and choose the best match for the illustration.#### Facial hair style (groom)
 
 Describe clearly and visually with detail:
 * Clean-shaven
@@ -228,7 +224,7 @@ Choose from:
     "height": {
       "primary": ""
     },
-    "skin_color": {
+    "coloring": {
       "primary": ""
     },
     "hairstyle": {
@@ -240,7 +236,7 @@ Choose from:
     "eye_size": {
       "primary": ""
     },
-    "body_shape": {
+    "body_type": {
       "primary": ""
     },
     "face_shape": {
@@ -254,7 +250,7 @@ Choose from:
     "height": {
       "primary": ""
     },
-    "skin_color": {
+    "coloring": {
       "primary": ""
     },
     "hairstyle": {
@@ -346,14 +342,39 @@ Choose from:
   if (!jsonMatch) {
     // Check if this is a content policy refusal
     if (responseText.toLowerCase().includes("sorry") || responseText.toLowerCase().includes("can't") || responseText.toLowerCase().includes("cannot")) {
-      logger.error(`[${requestId}] Content policy refusal detected`, responseText.slice(0, 200));
-      throw new Error("The AI could not analyze the photos. Please try with different photos or ensure faces are clearly visible.");
+      logger.error(`[${requestId}] Content policy refusal detected`, responseText.slice(0, 500));
+      console.error(`[${requestId}] FULL GPT-4o RESPONSE: ${responseText}`);
+      throw new Error(`AI photo analysis refused. Response: ${responseText.slice(0, 300)}`);
     }
-    logger.error(`[${requestId}] Failed to parse JSON from response`, responseText.slice(0, 300));
-    throw new Error("Failed to parse photo analysis");
+    logger.error(`[${requestId}] Failed to parse JSON from response`, responseText.slice(0, 500));
+    console.error(`[${requestId}] FULL GPT-4o RESPONSE: ${responseText}`);
+    throw new Error(`Failed to parse photo analysis. Response: ${responseText.slice(0, 300)}`);
   }
 
   const parsed = JSON.parse(jsonMatch[0]);
+
+  // Remap field names from artistic prompt terminology back to internal field names
+  if (parsed.bride) {
+    if (parsed.bride.coloring) {
+      parsed.bride.skin_color = parsed.bride.coloring;
+      delete parsed.bride.coloring;
+    }
+    if (parsed.bride.body_type) {
+      parsed.bride.body_shape = parsed.bride.body_type;
+      delete parsed.bride.body_type;
+    }
+  }
+  if (parsed.groom) {
+    if (parsed.groom.coloring) {
+      parsed.groom.skin_color = parsed.groom.coloring;
+      delete parsed.groom.coloring;
+    }
+    if (parsed.groom.body_type) {
+      parsed.groom.body_shape = parsed.groom.body_type;
+      delete parsed.groom.body_type;
+    }
+  }
+
   logger.log(`[${requestId}] Photo analysis complete`, {
     hasBride: !!parsed.bride,
     hasGroom: !!parsed.groom,

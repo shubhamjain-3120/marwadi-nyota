@@ -313,6 +313,198 @@ app.post(
   }
 );
 
+// Configure multer for video composition (character image + text fields)
+const composeUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max for character image
+  },
+});
+
+// Video composition endpoint - full server-side video generation
+// Used for Chrome iOS where client-side MediaRecorder is broken
+app.post(
+  "/api/compose-video",
+  composeUpload.single("characterImage"),
+  async (req, res) => {
+    const requestId = Date.now().toString(36);
+    const startTime = performance.now();
+
+    logger.log(`[${requestId}] Video composition endpoint called`, {
+      hasCharacterImage: !!req.file,
+      characterImageSize: req.file ? `${(req.file.size / 1024).toFixed(1)} KB` : null,
+      brideName: req.body.brideName,
+      groomName: req.body.groomName,
+      date: req.body.date,
+      venue: req.body.venue,
+    });
+
+    try {
+      const { brideName, groomName, date, venue } = req.body;
+      const characterImage = req.file;
+
+      // Validate required fields
+      if (!brideName || !groomName || !date || !venue) {
+        logger.warn(`[${requestId}] Validation failed`, "Missing required fields");
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields: brideName, groomName, date, venue",
+        });
+      }
+
+      // Create temp directory
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "video-compose-"));
+      const characterPath = path.join(tempDir, "character.png");
+      const outputPath = path.join(tempDir, "output.mp4");
+
+      // Path to background video (in frontend public assets)
+      const backgroundVideoPath = path.resolve("../frontend/public/assets/background.mp4");
+
+      // Path to fonts
+      const fontsDir = path.resolve("../frontend/public/fonts");
+      const alexBrushFont = path.join(fontsDir, "AlexBrush-Regular.ttf");
+      const playfairFont = path.join(fontsDir, "PlayfairDisplay-Regular.ttf");
+
+      logger.log(`[${requestId}] Writing character image to temp file`, { tempDir });
+
+      // Write character image to temp file
+      if (characterImage) {
+        await fs.writeFile(characterPath, characterImage.buffer);
+      }
+
+      // Video dimensions
+      const width = 1080;
+      const height = 1920;
+
+      // Animation timings (in seconds)
+      const namesStart = 2.5, namesEnd = 3;
+      const dateStart = 3, dateEnd = 3.5;
+      const venueStart = 3.5, venueEnd = 4;
+      const charStart = 4, charEnd = 5;
+
+      // Character positioning (matching client-side layout)
+      // Character takes 60% of height, centered horizontally
+      const charHeightPercent = 0.60;
+      const charTopPercent = 0.22;
+      const charHeight = Math.round(height * charHeightPercent);
+      const charY = Math.round(height * charTopPercent);
+
+      // Text positions
+      const namesY = Math.round(height * 0.1);
+      const dateY = Math.round(height * 0.875);
+      const venueY = Math.round(height * 0.915);
+
+      // Font sizes
+      const namesFontSize = Math.round(54 * 2.405);
+      const textFontSize = Math.round(54 * 0.9);
+
+      // Escape special characters for FFmpeg drawtext
+      const escapeText = (text) => text.replace(/'/g, "'\\''").replace(/:/g, "\\:");
+
+      // Build the names text (Bride & Groom)
+      const namesText = escapeText(`${brideName} & ${groomName}`);
+      const dateText = escapeText(date);
+      const venueText = escapeText(venue);
+
+      // Build FFmpeg filter complex
+      // Layer 1: Scale video to canvas size
+      // Layer 2: Overlay character image (with fade-in)
+      // Layer 3: Draw text overlays (with fade-in)
+      let filterComplex = `[0:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}[bg];`;
+
+      if (characterImage) {
+        // Add character overlay with fade-in
+        filterComplex += `[1:v]scale=-1:${charHeight}[char];`;
+        filterComplex += `[bg][char]overlay=(W-w)/2:${charY}:enable='gte(t,${charStart})':alpha='if(lt(t,${charStart}),0,if(lt(t,${charEnd}),(t-${charStart})/(${charEnd}-${charStart}),1))'[vid];`;
+      } else {
+        filterComplex += `[bg]copy[vid];`;
+      }
+
+      // Add text overlays with fade-in
+      // Names text (gold color, script font)
+      filterComplex += `[vid]drawtext=fontfile='${alexBrushFont}':text='${namesText}':fontsize=${namesFontSize}:fontcolor=0xD4A853:x=(w-text_w)/2:y=${namesY}:alpha='if(lt(t,${namesStart}),0,if(lt(t,${namesEnd}),(t-${namesStart})/(${namesEnd}-${namesStart}),1))'[v1];`;
+
+      // Date text (brown color, serif font)
+      filterComplex += `[v1]drawtext=fontfile='${playfairFont}':text='${dateText}':fontsize=${textFontSize}:fontcolor=0x8B7355:x=(w-text_w)/2:y=${dateY}:alpha='if(lt(t,${dateStart}),0,if(lt(t,${dateEnd}),(t-${dateStart})/(${dateEnd}-${dateStart}),1))'[v2];`;
+
+      // Venue text (brown color, serif font)
+      filterComplex += `[v2]drawtext=fontfile='${playfairFont}':text='${venueText}':fontsize=${textFontSize}:fontcolor=0x8B7355:x=(w-text_w)/2:y=${venueY}:alpha='if(lt(t,${venueStart}),0,if(lt(t,${venueEnd}),(t-${venueStart})/(${venueEnd}-${venueStart}),1))'[vout]`;
+
+      // Build FFmpeg command
+      const inputs = characterImage
+        ? `-i "${backgroundVideoPath}" -i "${characterPath}"`
+        : `-i "${backgroundVideoPath}"`;
+
+      const ffmpegCmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map 0:a? -c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart -pix_fmt yuv420p "${outputPath}"`;
+
+      logger.log(`[${requestId}] Running FFmpeg composition`, {
+        command: ffmpegCmd.slice(0, 200) + "...",
+      });
+
+      const compositionStart = performance.now();
+
+      try {
+        await execAsync(ffmpegCmd, { timeout: 180000 }); // 3 minute timeout
+      } catch (ffmpegError) {
+        logger.error(`[${requestId}] FFmpeg composition failed`, {
+          error: ffmpegError.message,
+          stderr: ffmpegError.stderr?.slice(0, 1000),
+          stdout: ffmpegError.stdout?.slice(0, 500),
+        });
+
+        // Cleanup temp files
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+
+        return res.status(500).json({
+          success: false,
+          error: `Video composition failed: ${ffmpegError.stderr?.slice(0, 200) || ffmpegError.message}`,
+        });
+      }
+
+      const compositionTime = performance.now() - compositionStart;
+      logger.log(`[${requestId}] FFmpeg composition complete`, {
+        duration: `${compositionTime.toFixed(0)}ms`,
+      });
+
+      // Read output MP4
+      const mp4Buffer = await fs.readFile(outputPath);
+
+      logger.log(`[${requestId}] MP4 output ready`, {
+        outputSize: `${(mp4Buffer.length / 1024 / 1024).toFixed(2)} MB`,
+      });
+
+      // Cleanup temp files
+      await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => {
+        logger.warn(`[${requestId}] Failed to cleanup temp dir`, err.message);
+      });
+
+      const totalDuration = performance.now() - startTime;
+      logger.log(`[${requestId}] Video composition complete`, {
+        totalDuration: `${totalDuration.toFixed(0)}ms`,
+        outputSize: `${(mp4Buffer.length / 1024 / 1024).toFixed(2)} MB`,
+      });
+
+      // Send MP4 as binary response
+      res.set({
+        "Content-Type": "video/mp4",
+        "Content-Length": mp4Buffer.length,
+        "Content-Disposition": "attachment; filename=wedding-invite.mp4",
+      });
+      res.send(mp4Buffer);
+
+    } catch (error) {
+      const totalDuration = performance.now() - startTime;
+      logger.error(`[${requestId}] Video composition failed after ${totalDuration.toFixed(0)}ms`, error);
+      console.error("[Server] Video composition error:", error);
+
+      res.status(500).json({
+        success: false,
+        error: "Video composition failed. Please try again.",
+      });
+    }
+  }
+);
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error("Unhandled error", err);

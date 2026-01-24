@@ -22,14 +22,32 @@ let ffmpeg = null;
 let ffmpegLoaded = false;
 
 /**
- * Check if client-side FFmpeg.wasm is supported.
- * FFmpeg.wasm requires SharedArrayBuffer which is blocked on iOS Safari
- * (post-Spectre security) and requires specific COOP/COEP headers elsewhere.
+ * Check if running on Chrome iOS (CriOS).
+ * Chrome iOS uses WebKit but has broken MediaRecorder/canvas.captureStream()
+ * that causes video composition to hang or lag severely.
+ */
+export function isChromeIOS() {
+  const ua = navigator.userAgent;
+  return /CriOS/.test(ua);
+}
+
+/**
+ * Check if client-side video composition is supported.
+ * Requires SharedArrayBuffer for FFmpeg.wasm and working MediaRecorder.
+ *
+ * Chrome iOS is explicitly excluded because:
+ * - MediaRecorder + canvas.captureStream() is broken/laggy
+ * - Video composition hangs during the recording phase
  */
 export function isFFmpegSupported() {
-  const supported = typeof SharedArrayBuffer !== 'undefined';
+  const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
+  const chromeIOS = isChromeIOS();
+  const supported = hasSharedArrayBuffer && !chromeIOS;
+
   logger.log("FFmpeg support check", {
-    sharedArrayBufferAvailable: supported,
+    sharedArrayBufferAvailable: hasSharedArrayBuffer,
+    isChromeIOS: chromeIOS,
+    clientCompositionSupported: supported,
     userAgent: navigator.userAgent.slice(0, 100)
   });
   return supported;
@@ -125,6 +143,113 @@ export async function preloadFFmpeg() {
     // Silently fail - will retry when actually needed
     logger.warn("FFmpeg preload failed (will retry on use)", error.message);
   }
+}
+
+/**
+ * Compose video entirely on the server.
+ * Used for Chrome iOS where client-side MediaRecorder/canvas.captureStream() is broken.
+ *
+ * Progress distribution:
+ * - 0-30%: Uploading assets to server
+ * - 30-90%: Server-side video composition
+ * - 90-100%: Downloading MP4
+ */
+async function serverComposeVideo({ characterImage, brideName, groomName, date, venue, onProgress }) {
+  const startTime = performance.now();
+  logger.log("Starting server-side video composition", {
+    characterImageLength: characterImage?.length,
+    brideName,
+    groomName,
+    date,
+    venue,
+  });
+
+  const formData = new FormData();
+
+  // Convert base64 character image to blob
+  if (characterImage) {
+    const base64Data = characterImage.split(',')[1];
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const characterBlob = new Blob([byteArray], { type: 'image/png' });
+    formData.append("characterImage", characterBlob, "character.png");
+  }
+
+  formData.append("brideName", brideName);
+  formData.append("groomName", groomName);
+  formData.append("date", date);
+  formData.append("venue", venue);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    // Track upload progress (0-30%)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const uploadProgress = Math.round((e.loaded / e.total) * 30);
+        logger.log("Server compose upload progress", { progress: `${uploadProgress}%` });
+        onProgress(uploadProgress);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const totalTime = performance.now() - startTime;
+        const mp4Blob = xhr.response;
+        logger.log("Server-side video composition complete", {
+          totalTime: `${totalTime.toFixed(0)}ms`,
+          outputSize: `${(mp4Blob.size / 1024 / 1024).toFixed(2)} MB`,
+        });
+        onProgress(100);
+        resolve(mp4Blob);
+      } else {
+        logger.error("Server compose failed", {
+          status: xhr.status,
+          statusText: xhr.statusText,
+        });
+        try {
+          const text = xhr.responseText;
+          const errorData = JSON.parse(text);
+          reject(new Error(errorData.error || "Server composition failed"));
+        } catch {
+          reject(new Error("Server composition failed: unexpected response"));
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      const totalTime = performance.now() - startTime;
+      logger.error("Server compose network error", { totalTime: `${totalTime.toFixed(0)}ms` });
+      reject(new Error("Network error during video composition"));
+    };
+
+    xhr.ontimeout = () => {
+      logger.error("Server compose timeout");
+      reject(new Error("Video composition timed out"));
+    };
+
+    // Simulate progress during server processing
+    let serverProgress = 30;
+    const progressInterval = setInterval(() => {
+      if (serverProgress < 85) {
+        serverProgress += 2;
+        onProgress(serverProgress);
+      }
+    }, 1000);
+
+    xhr.onloadend = () => {
+      clearInterval(progressInterval);
+    };
+
+    xhr.open("POST", `${API_URL}/api/compose-video`);
+    xhr.responseType = "blob";
+    xhr.timeout = 300000; // 5 minute timeout for full composition
+    xhr.send(formData);
+  });
 }
 
 /**
@@ -1007,6 +1132,10 @@ export async function composeVideoInvite({
     return null;
   };
   
+  // Check if Chrome iOS - needs full server-side composition
+  // (MediaRecorder + canvas.captureStream() is broken on Chrome iOS)
+  const needsServerComposition = isChromeIOS();
+
   // Detect if we'll use server-side conversion (for progress calculations)
   // Use server if: FFmpeg not supported OR forceServerConversion flag is set (dev mode)
   const useServerConversion = forceServerConversion || !isFFmpegSupported();
@@ -1018,6 +1147,8 @@ export async function composeVideoInvite({
     venue,
     characterImageSize: characterImage ? `${(characterImage.length / 1024).toFixed(1)}KB` : 'N/A',
     conversionMode: useServerConversion ? "server" : "client",
+    needsServerComposition,
+    isChromeIOS: isChromeIOS(),
     forceServerConversion,
     ffmpegSupported: isFFmpegSupported(),
     timestamp: new Date().toISOString(),
@@ -1025,7 +1156,34 @@ export async function composeVideoInvite({
   });
 
   onProgress(5);
-  
+
+  // Chrome iOS: Use full server-side composition
+  // Client-side MediaRecorder/canvas.captureStream() is broken on Chrome iOS
+  if (needsServerComposition) {
+    logger.log("Using server-side video composition (Chrome iOS detected)");
+    try {
+      const mp4Blob = await serverComposeVideo({
+        characterImage,
+        brideName,
+        groomName,
+        date,
+        venue,
+        onProgress,
+      });
+
+      const totalTime = performance.now() - compositionStartTime;
+      logger.log("=== VIDEO COMPOSITION COMPLETE (SERVER) ===", {
+        totalTime: `${totalTime.toFixed(0)}ms`,
+        outputSize: `${(mp4Blob.size / 1024 / 1024).toFixed(2)} MB`,
+      });
+
+      return mp4Blob;
+    } catch (error) {
+      logger.error("Server-side composition failed", error);
+      throw error;
+    }
+  }
+
   try {
     // Step 1: Load fonts
     logger.log("Step 1/8: Loading fonts");
