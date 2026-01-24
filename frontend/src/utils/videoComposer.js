@@ -14,9 +14,26 @@ import { createDevLogger } from "./devLogger";
 
 const logger = createDevLogger("VideoComposer");
 
+// API URL - uses environment variable in production, empty string (relative) in dev
+const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+
 // FFmpeg instance (lazy loaded)
 let ffmpeg = null;
 let ffmpegLoaded = false;
+
+/**
+ * Check if client-side FFmpeg.wasm is supported.
+ * FFmpeg.wasm requires SharedArrayBuffer which is blocked on iOS Safari
+ * (post-Spectre security) and requires specific COOP/COEP headers elsewhere.
+ */
+export function isFFmpegSupported() {
+  const supported = typeof SharedArrayBuffer !== 'undefined';
+  logger.log("FFmpeg support check", {
+    sharedArrayBufferAvailable: supported,
+    userAgent: navigator.userAgent.slice(0, 100)
+  });
+  return supported;
+}
 
 /**
  * Load FFmpeg.wasm (only loads once)
@@ -85,13 +102,21 @@ async function loadFFmpeg(onProgress) {
  * Preload FFmpeg.wasm in the background.
  * Call this early (e.g., when user enters the input form) to reduce latency
  * when video generation starts.
+ *
+ * Note: Only preloads if FFmpeg is supported (SharedArrayBuffer available).
  */
 export async function preloadFFmpeg() {
+  // Don't try to preload if FFmpeg is not supported
+  if (!isFFmpegSupported()) {
+    logger.log("FFmpeg preload skipped - SharedArrayBuffer not available (will use server fallback)");
+    return;
+  }
+
   if (ffmpegLoaded && ffmpeg) {
     logger.log("FFmpeg already loaded, skipping preload");
     return;
   }
-  
+
   logger.log("Preloading FFmpeg.wasm in background...");
   try {
     await loadFFmpeg();
@@ -103,23 +128,130 @@ export async function preloadFFmpeg() {
 }
 
 /**
- * Convert WebM blob to MP4 using FFmpeg.wasm
+ * Convert WebM blob to MP4 using server-side FFmpeg.
+ * Used as fallback when client-side FFmpeg.wasm is not supported (iOS/mobile).
+ *
+ * Progress distribution for server conversion:
+ * - 70-85%: Uploading WebM to server
+ * - 85-95%: Server conversion (indeterminate, we just set milestones)
+ * - 95-100%: Downloading MP4
  */
-async function convertWebMToMP4(webmBlob, onProgress) {
-  const conversionStartTime = performance.now();
-  logger.log("Starting WebM to MP4 conversion", { 
+async function serverConvertWebMToMP4(webmBlob, onProgress) {
+  const startTime = performance.now();
+  logger.log("Starting server-side WebM to MP4 conversion", {
     inputSize: `${(webmBlob.size / 1024 / 1024).toFixed(2)} MB`,
-    inputType: webmBlob.type 
+    inputType: webmBlob.type,
   });
-  
+
+  const formData = new FormData();
+  formData.append("video", webmBlob, "input.webm");
+
+  // Use XMLHttpRequest for upload progress tracking
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    // Track upload progress (70-85%)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const uploadProgress = 70 + (e.loaded / e.total) * 15;
+        logger.log("Server upload progress", {
+          uploaded: `${(e.loaded / 1024 / 1024).toFixed(2)} MB`,
+          total: `${(e.total / 1024 / 1024).toFixed(2)} MB`,
+          progress: `${uploadProgress.toFixed(1)}%`,
+        });
+        if (onProgress) {
+          onProgress(Math.round(uploadProgress));
+        }
+      }
+    };
+
+    xhr.upload.onloadend = () => {
+      logger.log("Upload complete, waiting for server conversion");
+      // Server is now converting - set progress to 85%
+      if (onProgress) {
+        onProgress(85);
+      }
+    };
+
+    xhr.onload = async () => {
+      const totalTime = performance.now() - startTime;
+
+      if (xhr.status === 200) {
+        // Check content type
+        const contentType = xhr.getResponseHeader("Content-Type");
+        if (contentType && contentType.includes("video/mp4")) {
+          // Success - we got an MP4 back
+          const mp4Blob = xhr.response;
+          logger.log("Server conversion complete", {
+            outputSize: `${(mp4Blob.size / 1024 / 1024).toFixed(2)} MB`,
+            compressionRatio: `${((1 - mp4Blob.size / webmBlob.size) * 100).toFixed(1)}%`,
+            totalTime: `${totalTime.toFixed(0)}ms`,
+          });
+
+          if (onProgress) {
+            onProgress(95);
+          }
+
+          resolve(mp4Blob);
+        } else {
+          // Got a non-video response (probably an error JSON)
+          try {
+            const text = await new Blob([xhr.response]).text();
+            const errorData = JSON.parse(text);
+            reject(new Error(errorData.error || "Server conversion failed"));
+          } catch {
+            reject(new Error("Server conversion failed: unexpected response"));
+          }
+        }
+      } else {
+        // HTTP error
+        logger.error("Server conversion failed", {
+          status: xhr.status,
+          statusText: xhr.statusText,
+        });
+        reject(new Error(`Server conversion failed: ${xhr.status} ${xhr.statusText}`));
+      }
+    };
+
+    xhr.onerror = () => {
+      const totalTime = performance.now() - startTime;
+      logger.error("Server conversion network error", {
+        totalTime: `${totalTime.toFixed(0)}ms`,
+      });
+      reject(new Error("Network error during video conversion"));
+    };
+
+    xhr.ontimeout = () => {
+      logger.error("Server conversion timeout");
+      reject(new Error("Video conversion timed out"));
+    };
+
+    // Open connection and send
+    xhr.open("POST", `${API_URL}/api/convert-video`);
+    xhr.responseType = "blob";
+    xhr.timeout = 180000; // 3 minute timeout for large videos
+    xhr.send(formData);
+  });
+}
+
+/**
+ * Convert WebM blob to MP4 using client-side FFmpeg.wasm
+ */
+async function clientConvertWebMToMP4(webmBlob, onProgress) {
+  const conversionStartTime = performance.now();
+  logger.log("Starting client-side WebM to MP4 conversion", {
+    inputSize: `${(webmBlob.size / 1024 / 1024).toFixed(2)} MB`,
+    inputType: webmBlob.type
+  });
+
   const ffmpegInstance = await loadFFmpeg(onProgress);
-  
+
   // Write input file
   logger.log("Writing input file to FFmpeg virtual filesystem");
   const writeStartTime = performance.now();
   await ffmpegInstance.writeFile("input.webm", await fetchFile(webmBlob));
   logger.log("Input file written", { writeTime: `${(performance.now() - writeStartTime).toFixed(0)}ms` });
-  
+
   // Convert to MP4 with H.264 codec for maximum compatibility
   // Using -c:v libx264 for video, -c:a aac for audio
   // -movflags +faststart enables progressive download
@@ -135,8 +267,8 @@ async function convertWebMToMP4(webmBlob, onProgress) {
     "-pix_fmt", "yuv420p",
     "output.mp4"
   ];
-  
-  logger.log("Executing FFmpeg conversion", { 
+
+  logger.log("Executing FFmpeg conversion", {
     command: `ffmpeg ${ffmpegArgs.join(" ")}`,
     codec: "H.264 (libx264)",
     preset: "ultrafast",
@@ -144,7 +276,7 @@ async function convertWebMToMP4(webmBlob, onProgress) {
     audioCodec: "AAC",
     audioBitrate: "96k"
   });
-  
+
   const execStartTime = performance.now();
   try {
     await ffmpegInstance.exec(ffmpegArgs);
@@ -153,28 +285,51 @@ async function convertWebMToMP4(webmBlob, onProgress) {
     logger.error("FFmpeg execution failed", error);
     throw error;
   }
-  
+
   // Read output file
   logger.log("Reading output file from FFmpeg virtual filesystem");
   const data = await ffmpegInstance.readFile("output.mp4");
   logger.log("Output file read", { outputBytes: data.byteLength });
-  
+
   // Cleanup
   logger.log("Cleaning up FFmpeg virtual filesystem");
   await ffmpegInstance.deleteFile("input.webm");
   await ffmpegInstance.deleteFile("output.mp4");
-  
+
   const mp4Blob = new Blob([data.buffer], { type: "video/mp4" });
   const totalConversionTime = performance.now() - conversionStartTime;
   const compressionRatio = ((1 - mp4Blob.size / webmBlob.size) * 100).toFixed(1);
-  
-  logger.log("MP4 conversion complete", { 
+
+  logger.log("Client-side MP4 conversion complete", {
     outputSize: `${(mp4Blob.size / 1024 / 1024).toFixed(2)} MB`,
     compressionRatio: `${compressionRatio}%`,
     totalTime: `${totalConversionTime.toFixed(0)}ms`
   });
-  
+
   return mp4Blob;
+}
+
+/**
+ * Convert WebM blob to MP4.
+ * Uses client-side FFmpeg.wasm if supported, otherwise falls back to server-side conversion.
+ */
+async function convertWebMToMP4(webmBlob, onProgress, useServerFallback = false) {
+  // Check if we should use server-side conversion
+  if (useServerFallback || !isFFmpegSupported()) {
+    logger.log("Using server-side conversion", {
+      reason: useServerFallback ? "explicit fallback" : "SharedArrayBuffer not available"
+    });
+    return serverConvertWebMToMP4(webmBlob, onProgress);
+  }
+
+  // Try client-side first
+  try {
+    return await clientConvertWebMToMP4(webmBlob, onProgress);
+  } catch (error) {
+    logger.warn("Client-side FFmpeg failed, falling back to server", error.message);
+    // Fallback to server if client fails
+    return serverConvertWebMToMP4(webmBlob, onProgress);
+  }
 }
 
 // Canvas dimensions for the invite (9:16 aspect ratio)
@@ -814,22 +969,24 @@ function drawFrame(ctx, video, characterImg, characterBounds, brideName, groomNa
 
 /**
  * Compose a video invite with character and text overlays
- * 
+ *
  * @param {Object} params
  * @param {string} params.characterImage - Data URL of character (with transparent bg)
  * @param {string} params.brideName
  * @param {string} params.groomName
  * @param {string} params.date
  * @param {string} params.venue
+ * @param {boolean} params.forceServerConversion - Force server-side FFmpeg (dev mode)
  * @param {function} params.onProgress - Progress callback (0-100)
  * @returns {Promise<Blob>} - Video blob (MP4 format)
  */
-export async function composeVideoInvite({ 
-  characterImage, 
-  brideName, 
-  groomName, 
-  date, 
+export async function composeVideoInvite({
+  characterImage,
+  brideName,
+  groomName,
+  date,
   venue,
+  forceServerConversion = false,
   onProgress = () => {}
 }) {
   const compositionStartTime = performance.now();
@@ -850,16 +1007,23 @@ export async function composeVideoInvite({
     return null;
   };
   
+  // Detect if we'll use server-side conversion (for progress calculations)
+  // Use server if: FFmpeg not supported OR forceServerConversion flag is set (dev mode)
+  const useServerConversion = forceServerConversion || !isFFmpegSupported();
+
   logger.log("=== VIDEO COMPOSITION STARTED ===", {
     brideName,
     groomName,
     date,
     venue,
     characterImageSize: characterImage ? `${(characterImage.length / 1024).toFixed(1)}KB` : 'N/A',
+    conversionMode: useServerConversion ? "server" : "client",
+    forceServerConversion,
+    ffmpegSupported: isFFmpegSupported(),
     timestamp: new Date().toISOString(),
     memory: getMemoryInfo(),
   });
-  
+
   onProgress(5);
   
   try {
@@ -1089,8 +1253,11 @@ export async function composeVideoInvite({
           lastFrameLogTime = video.currentTime;
         }
         
-        // Update progress (20% to 85% during rendering)
-        const renderProgress = 20 + (video.currentTime / videoDuration) * 65;
+        // Update progress during rendering
+        // Server mode: 20% to 70% (leaves room for upload/conversion)
+        // Client mode: 20% to 85% (FFmpeg conversion is faster)
+        const progressRange = useServerConversion ? 50 : 65;
+        const renderProgress = 20 + (video.currentTime / videoDuration) * progressRange;
         if (renderProgress - lastProgressUpdate >= 2) {
           onProgress(Math.round(renderProgress));
           lastProgressUpdate = renderProgress;
@@ -1107,11 +1274,12 @@ export async function composeVideoInvite({
     });
     
     stepTimings.recording = performance.now() - recordingStartTime;
-    logger.log("Step 6/8 complete: Rendering finished", { 
+    logger.log("Step 6/8 complete: Rendering finished", {
       duration: `${stepTimings.recording.toFixed(0)}ms`,
-      frames: frameCount 
+      frames: frameCount
     });
-    onProgress(85);
+    // Set progress to end of rendering range
+    onProgress(useServerConversion ? 70 : 85);
     
     // Step 7: Finalize recording
     logger.log("Step 7/8: Finalizing recording");
@@ -1133,17 +1301,19 @@ export async function composeVideoInvite({
     });
     
     // Step 8: Convert WebM to MP4 for QuickTime/iOS compatibility
-    logger.log("Step 8/8: Converting WebM to MP4 using FFmpeg.wasm");
+    const conversionMethod = useServerConversion ? "server-side FFmpeg" : "FFmpeg.wasm";
+    logger.log(`Step 8/8: Converting WebM to MP4 using ${conversionMethod}`);
     const conversionStartTime = performance.now();
 
     let mp4Blob;
     try {
-      mp4Blob = await convertWebMToMP4(webmBlob, onProgress);
+      mp4Blob = await convertWebMToMP4(webmBlob, onProgress, useServerConversion);
       stepTimings.conversion = performance.now() - conversionStartTime;
 
       logger.log("Step 8/8 complete: MP4 conversion finished", {
         duration: `${stepTimings.conversion.toFixed(0)}ms`,
         outputSize: `${(mp4Blob.size / 1024 / 1024).toFixed(2)}MB`,
+        method: conversionMethod,
       });
     } catch (conversionError) {
       logger.warn("MP4 conversion failed, falling back to WebM", conversionError.message);
@@ -1157,6 +1327,7 @@ export async function composeVideoInvite({
     logger.log("=== VIDEO COMPOSITION COMPLETE ===", {
       totalDuration: `${totalTime.toFixed(0)}ms`,
       totalDurationHuman: `${(totalTime / 1000).toFixed(1)}s`,
+      conversionMode: useServerConversion ? "server" : "client",
       output: {
         size: `${(mp4Blob.size / 1024 / 1024).toFixed(2)}MB`,
         type: mp4Blob.type,

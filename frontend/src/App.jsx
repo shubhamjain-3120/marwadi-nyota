@@ -264,6 +264,7 @@ export default function App() {
       skipImageGeneration: data.skipImageGeneration,
       skipBackgroundRemoval: data.skipBackgroundRemoval,
       skipVideoGeneration: data.skipVideoGeneration,
+      forceServerConversion: data.forceServerConversion,
     });
 
     try {
@@ -398,6 +399,7 @@ export default function App() {
           date: data.date,
           venue: data.venue,
           characterImageLength: characterImage?.length,
+          forceServerConversion: data.forceServerConversion,
         });
         console.log("[App] Composing video invite...");
 
@@ -410,10 +412,11 @@ export default function App() {
           groomName: data.groomName,
           date: data.date,
           venue: data.venue,
+          forceServerConversion: data.forceServerConversion,
           onProgress: (progress) => {
             // Only log at key milestones (every 20%) to reduce noise
             if (progress >= lastLoggedProgress + 20 || progress === 100) {
-              logger.log("Video composition progress", { 
+              logger.log("Video composition progress", {
                 progress: `${progress}%`,
                 elapsed: `${(performance.now() - startVideoCompose).toFixed(0)}ms`
               });

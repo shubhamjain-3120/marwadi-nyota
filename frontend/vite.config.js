@@ -117,4 +117,11 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
+  preview: {
+    // Same headers for preview server
+    headers: {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "credentialless",
+    },
+  },
 }));

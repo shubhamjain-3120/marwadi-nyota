@@ -123,6 +123,7 @@ export default function InputScreen({ onGenerate, error }) {
   const [skipImageGeneration, setSkipImageGeneration] = useState(false);
   const [skipBackgroundRemoval, setSkipBackgroundRemoval] = useState(false);
   const [skipVideoGeneration, setSkipVideoGeneration] = useState(false);
+  const [forceServerConversion, setForceServerConversion] = useState(false);
 
   // Auto-load dev character file into photo when dev mode is enabled (only if no photo yet)
   useEffect(() => {
@@ -261,6 +262,7 @@ export default function InputScreen({ onGenerate, error }) {
       skipImageGeneration: devMode ? skipImageGeneration : false,
       skipBackgroundRemoval: devMode ? skipBackgroundRemoval : false,
       skipVideoGeneration: devMode ? skipVideoGeneration : false,
+      forceServerConversion: devMode ? forceServerConversion : false,
     };
 
     logger.log("Form validation passed, calling onGenerate", {
@@ -273,6 +275,7 @@ export default function InputScreen({ onGenerate, error }) {
       skipImageGeneration: formData.skipImageGeneration,
       skipBackgroundRemoval: formData.skipBackgroundRemoval,
       skipVideoGeneration: formData.skipVideoGeneration,
+      forceServerConversion: formData.forceServerConversion,
       photoSize: photo ? `${(photo.size / 1024).toFixed(1)} KB` : null,
     });
 
@@ -510,6 +513,18 @@ export default function InputScreen({ onGenerate, error }) {
                     className={`toggle-switch ${skipVideoGeneration ? 'toggle-on' : ''}`}
                     onClick={() => setSkipVideoGeneration(!skipVideoGeneration)}
                     aria-label="Toggle skip video generation"
+                  >
+                    <span className="toggle-knob" />
+                  </button>
+                </div>
+
+                <div className="dev-toggle-row">
+                  <span className="dev-toggle-label">Force Server FFmpeg</span>
+                  <button
+                    type="button"
+                    className={`toggle-switch ${forceServerConversion ? 'toggle-on' : ''}`}
+                    onClick={() => setForceServerConversion(!forceServerConversion)}
+                    aria-label="Toggle force server-side video conversion"
                   >
                     <span className="toggle-knob" />
                   </button>

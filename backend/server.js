@@ -5,6 +5,13 @@ import multer from "multer";
 import { rateLimit } from "express-rate-limit";
 import { generateWeddingCharacters } from "./gemini.js";
 import { createDevLogger, isDevMode } from "./devLogger.js";
+import { exec } from "child_process";
+import { promisify } from "util";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
+
+const execAsync = promisify(exec);
 
 const logger = createDevLogger("Server");
 
@@ -14,26 +21,36 @@ const PORT = process.env.PORT || 3001;
 // Validate file is actually an image by checking magic bytes
 function isValidImageBuffer(buffer) {
   if (!buffer || buffer.length < 4) return false;
-  
+
   const bytes = [...buffer.slice(0, 12)];
-  
+
   // Check JPEG
   if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return true;
-  
+
   // Check PNG
   if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return true;
-  
+
   // Check GIF
   if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return true;
-  
+
   // Check WebP (RIFF....WEBP)
   if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
       bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return true;
-  
+
   return false;
 }
 
-// Configure multer for memory storage
+// Validate file is actually a WebM video by checking magic bytes
+function isValidWebMBuffer(buffer) {
+  if (!buffer || buffer.length < 4) return false;
+
+  const bytes = [...buffer.slice(0, 4)];
+
+  // WebM files start with EBML header: 0x1A 0x45 0xDF 0xA3
+  return bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3;
+}
+
+// Configure multer for memory storage (images)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -43,6 +60,22 @@ const upload = multer({
     // First check: MIME type (can be spoofed but catches obvious mistakes)
     if (!file.mimetype.startsWith("image/")) {
       cb(new Error("Only image files are allowed"));
+      return;
+    }
+    cb(null, true);
+  },
+});
+
+// Configure multer for video uploads (for WebM to MP4 conversion)
+const videoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB max for video files
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept video/webm MIME type
+    if (file.mimetype !== "video/webm") {
+      cb(new Error("Only WebM video files are allowed"));
       return;
     }
     cb(null, true);
@@ -152,6 +185,129 @@ app.post(
       res.status(500).json({
         success: false,
         error: "Generation failed. Please try again.",
+      });
+    }
+  }
+);
+
+// Video conversion endpoint (WebM to MP4)
+// Used as fallback for iOS/mobile devices where FFmpeg.wasm doesn't work
+app.post(
+  "/api/convert-video",
+  videoUpload.single("video"),
+  async (req, res) => {
+    const requestId = Date.now().toString(36);
+    const startTime = performance.now();
+
+    logger.log(`[${requestId}] Video conversion endpoint called`, {
+      hasFile: !!req.file,
+      fileSize: req.file ? `${(req.file.size / 1024 / 1024).toFixed(2)} MB` : null,
+      fileMimeType: req.file?.mimetype,
+    });
+
+    try {
+      const video = req.file;
+
+      // Validate input
+      if (!video) {
+        logger.warn(`[${requestId}] Validation failed`, "No video provided");
+        return res.status(400).json({
+          success: false,
+          error: "WebM video file is required",
+        });
+      }
+
+      // Validate file content (magic bytes)
+      if (!isValidWebMBuffer(video.buffer)) {
+        logger.warn(`[${requestId}] Validation failed`, "Invalid WebM file content");
+        return res.status(400).json({
+          success: false,
+          error: "Invalid WebM file. Please upload a valid WebM video.",
+        });
+      }
+
+      // Create temp directory and files
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "video-convert-"));
+      const inputPath = path.join(tempDir, "input.webm");
+      const outputPath = path.join(tempDir, "output.mp4");
+
+      logger.log(`[${requestId}] Writing WebM to temp file`, {
+        tempDir,
+        inputSize: `${(video.buffer.length / 1024 / 1024).toFixed(2)} MB`,
+      });
+
+      // Write WebM to temp file
+      await fs.writeFile(inputPath, video.buffer);
+
+      // Run FFmpeg conversion
+      // -i: input file
+      // -c:v libx264: H.264 video codec
+      // -preset ultrafast: fastest encoding (good enough quality for our use case)
+      // -crf 23: quality level (lower = better, 23 is default)
+      // -c:a aac: AAC audio codec
+      // -b:a 96k: audio bitrate
+      // -movflags +faststart: optimize for web streaming
+      // -pix_fmt yuv420p: ensure compatibility with all players
+      const ffmpegCmd = `ffmpeg -y -i "${inputPath}" -c:v libx264 -preset ultrafast -crf 23 -c:a aac -b:a 96k -movflags +faststart -pix_fmt yuv420p "${outputPath}"`;
+
+      logger.log(`[${requestId}] Running FFmpeg conversion`, { command: ffmpegCmd });
+      const conversionStart = performance.now();
+
+      try {
+        await execAsync(ffmpegCmd, { timeout: 120000 }); // 2 minute timeout
+      } catch (ffmpegError) {
+        logger.error(`[${requestId}] FFmpeg conversion failed`, ffmpegError);
+
+        // Cleanup temp files
+        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+
+        return res.status(500).json({
+          success: false,
+          error: "Video conversion failed. FFmpeg error.",
+        });
+      }
+
+      const conversionTime = performance.now() - conversionStart;
+      logger.log(`[${requestId}] FFmpeg conversion complete`, {
+        duration: `${conversionTime.toFixed(0)}ms`,
+      });
+
+      // Read output MP4
+      const mp4Buffer = await fs.readFile(outputPath);
+
+      logger.log(`[${requestId}] MP4 output ready`, {
+        outputSize: `${(mp4Buffer.length / 1024 / 1024).toFixed(2)} MB`,
+        compressionRatio: `${((1 - mp4Buffer.length / video.buffer.length) * 100).toFixed(1)}%`,
+      });
+
+      // Cleanup temp files
+      await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => {
+        logger.warn(`[${requestId}] Failed to cleanup temp dir`, err.message);
+      });
+
+      const totalDuration = performance.now() - startTime;
+      logger.log(`[${requestId}] Video conversion complete`, {
+        totalDuration: `${totalDuration.toFixed(0)}ms`,
+        inputSize: `${(video.buffer.length / 1024 / 1024).toFixed(2)} MB`,
+        outputSize: `${(mp4Buffer.length / 1024 / 1024).toFixed(2)} MB`,
+      });
+
+      // Send MP4 as binary response
+      res.set({
+        "Content-Type": "video/mp4",
+        "Content-Length": mp4Buffer.length,
+        "Content-Disposition": "attachment; filename=output.mp4",
+      });
+      res.send(mp4Buffer);
+
+    } catch (error) {
+      const totalDuration = performance.now() - startTime;
+      logger.error(`[${requestId}] Video conversion failed after ${totalDuration.toFixed(0)}ms`, error);
+      console.error("[Server] Video conversion error:", error);
+
+      res.status(500).json({
+        success: false,
+        error: "Video conversion failed. Please try again.",
       });
     }
   }
