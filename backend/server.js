@@ -358,10 +358,10 @@ app.post(
       const outputPath = path.join(tempDir, "output.mp4");
 
       // Path to background video (in frontend public assets)
-      const backgroundVideoPath = path.resolve("../frontend/public/assets/background.mp4");
+      const backgroundVideoPath = path.join(__dirname, "../frontend/public/assets/background.mp4");
 
       // Path to fonts
-      const fontsDir = path.resolve("../frontend/public/fonts");
+      const fontsDir = path.join(__dirname, "../frontend/public/fonts");
       const GreatVibes = path.join(fontsDir, "GreatVibes-Regular.ttf");
       const playfairFont = path.join(fontsDir, "PlayfairDisplay.ttf");
 
