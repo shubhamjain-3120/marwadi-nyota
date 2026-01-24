@@ -362,8 +362,8 @@ app.post(
 
       // Path to fonts
       const fontsDir = path.resolve("../frontend/public/fonts");
-      const alexBrushFont = path.join(fontsDir, "AlexBrush-Regular.ttf");
-      const playfairFont = path.join(fontsDir, "PlayfairDisplay-Regular.ttf");
+      const GreatVibes = path.join(fontsDir, "GreatVibes-Regular.ttf");
+      const playfairFont = path.join(fontsDir, "PlayfairDisplay.ttf");
 
       logger.log(`[${requestId}] Writing character image to temp file`, { tempDir });
 
@@ -390,19 +390,19 @@ app.post(
       const charY = Math.round(height * charTopPercent);
 
       // Text positions
-      const namesY = Math.round(height * 0.1);
+      const namesY = Math.round(height * 0.06);
       const dateY = Math.round(height * 0.875);
       const venueY = Math.round(height * 0.915);
 
       // Font sizes
-      const namesFontSize = Math.round(54 * 2.405);
-      const textFontSize = Math.round(54 * 0.9);
+      const namesFontSize = Math.round(54 * 3);
+      const textFontSize = Math.round(54 * 1.5);
 
       // Escape special characters for FFmpeg drawtext
       const escapeText = (text) => text.replace(/'/g, "'\\''").replace(/:/g, "\\:");
 
       // Build the names text (Bride & Groom)
-      const namesText = escapeText(`${brideName} & ${groomName}`);
+      const namesText = escapeText(`\u00A0\u00A0${brideName} & ${groomName}\u00A0\u00A0`);
       const dateText = escapeText(date);
       const venueText = escapeText(venue);
 
@@ -429,7 +429,7 @@ if (characterImage) {
 
       // Add text overlays with fade-in
       // Names text (gold color, script font)
-      filterComplex += `[vid]drawtext=fontfile='${alexBrushFont}':text='${namesText}':fontsize=${namesFontSize}:fontcolor=0xD4A853:x=(w-text_w)/2:y=${namesY}:alpha='if(lt(t,${namesStart}),0,if(lt(t,${namesEnd}),(t-${namesStart})/(${namesEnd}-${namesStart}),1))'[v1];`;
+      filterComplex += `[vid]drawtext=fontfile='${GreatVibes}':text='${namesText}':fontsize=${namesFontSize}:fontcolor=0xD4A853:x=(w-text_w)/2:y=${namesY}:alpha='if(lt(t,${namesStart}),0,if(lt(t,${namesEnd}),(t-${namesStart})/(${namesEnd}-${namesStart}),1))'[v1];`;
 
       // Date text (brown color, serif font)
       filterComplex += `[v1]drawtext=fontfile='${playfairFont}':text='${dateText}':fontsize=${textFontSize}:fontcolor=0x8B7355:x=(w-text_w)/2:y=${dateY}:alpha='if(lt(t,${dateStart}),0,if(lt(t,${dateEnd}),(t-${dateStart})/(${dateEnd}-${dateStart}),1))'[v2];`;
