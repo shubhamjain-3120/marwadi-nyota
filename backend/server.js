@@ -66,8 +66,10 @@ const generateLimiter = rateLimit({
 });
 
 // Middleware
+// Strip trailing slash from CORS origin to match browser's Origin header exactly
+const corsOrigin = process.env.CORS_ORIGIN?.replace(/\/+$/, "") || (isDevMode() ? '*' : 'https://your-domain.com');
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || (isDevMode() ? '*' : 'https://your-domain.com'),
+  origin: corsOrigin,
   credentials: true
 }));
 app.use(express.json({ limit: '1mb' }));

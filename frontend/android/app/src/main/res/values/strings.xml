@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Wedding Invite</string>
+    <string name="title_activity_main">Wedding Invite</string>
+    <string name="package_name">com.weddinginvite.app</string>
+    <string name="custom_url_scheme">com.weddinginvite.app</string>
+</resources>

@@ -30,7 +30,8 @@ const SpeakerOffIcon = () => (
 );
 
 // API URL - uses environment variable in production, empty string (relative) in dev
-const API_URL = import.meta.env.VITE_API_URL || "";
+// Strip trailing slashes to prevent double-slash URLs like "host//api/generate"
+const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
 const SCREENS = {
   ONBOARDING: "onboarding",

@@ -378,15 +378,21 @@ Your goal is to penalize deviations proportionally, rejecting only when the imag
 
 These must always be satisfied.
 
-1.1 Subject Integrity
+1.1 Subject Integrity - CHARACTER COUNT IS CRITICAL
 
-The image must contain exactly two characters only
+COUNT THE NUMBER OF PEOPLE/CHARACTERS CAREFULLY:
+- The image MUST contain EXACTLY 2 people (one bride, one groom)
+- If you see 3, 4, or more people/figures → IMMEDIATE REJECT
+- If you see duplicate/repeated characters (same person shown twice) → IMMEDIATE REJECT
+- If you see mirror images or reflections showing extra people → IMMEDIATE REJECT
 
 Both characters must be clearly human
 
 No animals, humanoid creatures, dolls, mannequins, fantasy beings, silhouettes, or partial figures
 
 No third person, reflections of people, background figures, or framed portraits
+
+IMPORTANT: Before evaluating anything else, COUNT the distinct human figures. If count ≠ 2, set hard_invariants.passed = false immediately.
 
 Any violation → immediate REJECT.
 
@@ -501,6 +507,7 @@ OUTPUT FORMAT (JSON only)
 {
   "hard_invariants": {
     "passed": true/false,
+    "character_count": <number of distinct human figures you counted>,
     "violations": ["list of violations if any"]
   },
   "soft_rules": {
@@ -590,18 +597,23 @@ OUTPUT FORMAT (JSON only)
     }
 
     const evaluation = JSON.parse(jsonMatch[0]);
-    
+
+    const hardRulesPassed = evaluation.hard_invariants?.passed !== false;
+    const characterCount = evaluation.hard_invariants?.character_count;
     const softRulesPassed = evaluation.soft_rules?.passed === true;
     const totalScore = evaluation.scores?.total_score || 0;
     const softRulesViolations = evaluation.soft_rules?.violations || [];
     const recommendation = evaluation.recommendation || (softRulesPassed ? "ACCEPT" : "REJECT");
-    
+
+    // CRITICAL: Hard invariants must pass (especially character count = 2)
     // Pass if recommendation is ACCEPT, or if soft rules pass and score meets threshold
-    // The soft gating framework is more lenient - only reject if multiple rules violated or one is severe
-    const passed = recommendation === "ACCEPT" || (softRulesPassed && totalScore >= 75);
+    // But NEVER pass if hard invariants failed
+    const passed = hardRulesPassed && (recommendation === "ACCEPT" || (softRulesPassed && totalScore >= 75));
 
     logger.log(`[${requestId}] Evaluation complete`, {
       score: totalScore,
+      hardRulesPassed,
+      characterCount,
       softRulesPassed,
       recommendation,
       passed,
@@ -609,7 +621,7 @@ OUTPUT FORMAT (JSON only)
       issues: evaluation.issues?.length > 0 ? evaluation.issues : "none",
     });
 
-    console.log(`[Evaluation] Score: ${totalScore}/100, Soft rules passed: ${softRulesPassed}, Recommendation: ${recommendation}, Overall: ${passed ? 'PASS' : 'FAIL'}`);
+    console.log(`[Evaluation] Score: ${totalScore}/100, Character count: ${characterCount}, Hard rules: ${hardRulesPassed ? 'PASS' : 'FAIL'}, Soft rules: ${softRulesPassed}, Recommendation: ${recommendation}, Overall: ${passed ? 'PASS' : 'FAIL'}`);
     if (softRulesViolations.length > 0) {
       console.log(`[Evaluation] Soft rule violations: ${softRulesViolations.join(', ')}`);
     }
@@ -620,6 +632,8 @@ OUTPUT FORMAT (JSON only)
     return {
       passed,
       score: totalScore,
+      hardRulesPassed,
+      characterCount,
       softRulesPassed,
       softRulesViolations,
       recommendation,
@@ -656,9 +670,20 @@ async function generateWithEvaluation(descriptions, maxAttempts = 3, requestId =
       logger.log(`[${requestId}] Evaluating generated image`);
       console.log(`[Generator] Evaluating generated image (attempt ${attempt})...`);
       const evaluation = await evaluateGeneratedImage(result.imageData, result.mimeType, requestId);
-      
-      // Track the best result so far
-      if (evaluation.score > bestScore) {
+
+      // Check if hard invariants passed (character count, etc.)
+      const hardRulesPassed = evaluation.details?.hard_invariants?.passed !== false;
+      const characterCount = evaluation.details?.hard_invariants?.character_count;
+
+      if (characterCount && characterCount !== 2) {
+        logger.log(`[${requestId}] HARD REJECT: Wrong character count (${characterCount})`);
+        console.log(`[Generator] REJECTED: Image has ${characterCount} characters instead of 2`);
+        // Don't track this as best result - hard invariant violation
+        continue;
+      }
+
+      // Track the best result so far (only if hard invariants pass)
+      if (hardRulesPassed && evaluation.score > bestScore) {
         bestScore = evaluation.score;
         bestResult = {
           ...result,
@@ -726,8 +751,10 @@ async function generateWithEvaluation(descriptions, maxAttempts = 3, requestId =
     console.log(`[Generator] Note: Image did not meet acceptance criteria but was the best generated`);
     return bestResult;
   }
-  
-  throw new Error(`Failed to generate acceptable image after ${maxAttempts} attempts`);
+
+  // If no best result, it means all attempts had hard invariant failures (e.g., wrong character count)
+  logger.error(`[${requestId}] All ${maxAttempts} attempts failed hard invariants (likely character count issues)`);
+  throw new Error(`Failed to generate valid image after ${maxAttempts} attempts. All generated images had incorrect character count (should be exactly 2 people).`);
 }
 
 /**
@@ -778,7 +805,14 @@ async function generateWithGemini3(descriptions, requestId = "") {
 
   const prompt = `Create a full-body, front-facing illustration of a bride and groom in a Studio Ghibli–inspired style (soft, painterly, warm colors, gentle outlines, slightly whimsical but realistic proportions).
 
-The image must contain only the two characters on a pure white background, with no props, no scenery, no text.
+CRITICAL RULE - CHARACTER COUNT:
+- Draw EXACTLY ONE bride and EXACTLY ONE groom (2 people total)
+- DO NOT duplicate or repeat characters
+- DO NOT show the same person twice
+- DO NOT create mirror images, reflections, or multiple versions of either character
+- There must be precisely 2 distinct individuals in the image - no more, no less
+
+The image must contain only these two characters on a pure white background, with no props, no scenery, no text.
 
 CRITICAL: Match the exact skin color and hairstyle descriptions provided below as closely as possible. These are extracted from the actual couple's photo.
 

@@ -40,7 +40,7 @@ export default function LoadingScreen({ completed = false }) {
         const increment = Math.floor(Math.random() * 3) + 1;
         return Math.min(prev + increment, 90);
       });
-    }, 1000); // Every 1 second
+    }, 1430); // Every ~1.4 seconds (30% slower)
 
     return () => clearInterval(interval);
   }, [completed, progress >= 90]);
@@ -59,7 +59,7 @@ export default function LoadingScreen({ completed = false }) {
         }
         return prev + 1;
       });
-    }, 5000); // 1% every 5 seconds
+    }, 7150); // 1% every ~7 seconds (30% slower)
 
     return () => clearInterval(slowInterval);
   }, [progress >= 90, completed]);
