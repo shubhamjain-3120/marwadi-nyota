@@ -1,10 +1,13 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from "react";
 import InputScreen from "./components/InputScreen";
 import LoadingScreen from "./components/LoadingScreen";
+import SampleVideoScreen from "./components/SampleVideoScreen";
+import PhotoUploadScreen from "./components/PhotoUploadScreen";
 import { composeVideoInvite } from "./utils/videoComposer";
 import { removeImageBackground, dataURLToBlob } from "./utils/backgroundRemoval";
 import { createDevLogger } from "./utils/devLogger";
 import { incrementGenerationCount } from "./utils/rateLimit";
+import { getImageProcessingService, resetImageProcessingService, STATES } from "./utils/imageProcessingService";
 
 // Lazy load components that aren't immediately needed
 const OnboardingScreen = lazy(() => import("./components/OnboardingScreen"));
@@ -34,32 +37,12 @@ const SpeakerOffIcon = () => (
 const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
 const SCREENS = {
-  ONBOARDING: "onboarding",
+  SAMPLE_VIDEO: "sample_video",
+  PHOTO_UPLOAD: "photo_upload",
   INPUT: "input",
   LOADING: "loading",
   RESULT: "result",
 };
-
-// LocalStorage key for onboarding
-const ONBOARDING_KEY = "hasSeenOnboarding";
-
-// Check if user has seen onboarding
-function hasSeenOnboarding() {
-  try {
-    return localStorage.getItem(ONBOARDING_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-// Mark onboarding as seen
-function markOnboardingSeen() {
-  try {
-    localStorage.setItem(ONBOARDING_KEY, "true");
-  } catch {
-    // Ignore localStorage errors
-  }
-}
 
 // Brief delay (ms) to show 100% before transitioning to result
 const COMPLETION_DELAY_MS = 500;
@@ -201,18 +184,21 @@ function useNetworkStatus() {
 }
 
 export default function App() {
-  // Start with onboarding if not seen before, otherwise go to input
-  const [screen, setScreen] = useState(() => 
-    hasSeenOnboarding() ? SCREENS.INPUT : SCREENS.ONBOARDING
-  );
+  // Always start with sample video screen
+  const [screen, setScreen] = useState(SCREENS.SAMPLE_VIDEO);
   const [formData, setFormData] = useState(null);
   const [finalInvite, setFinalInvite] = useState(null);
   const [error, setError] = useState(null);
   const [loadingCompleted, setLoadingCompleted] = useState(false);
-  
+
+  // New state for photo upload and processing
+  const [uploadedPhoto, setUploadedPhoto] = useState(null);
+  const [processingStatus, setProcessingStatus] = useState({ state: 'idle' });
+  const processingServiceRef = useRef(null);
+
   // Network status detection
   const isOnline = useNetworkStatus();
-  
+
   // Background music state
   const [isMusicPlaying, setIsMusicPlaying] = useState(true);
   const audioRef = useRef(null);
@@ -308,6 +294,55 @@ export default function App() {
     }
   }, [screen]);
 
+  // Navigation handler: Sample video → Photo upload
+  const handleSampleVideoComplete = useCallback(() => {
+    logger.log("Sample video complete, navigating to photo upload");
+    setScreen(SCREENS.PHOTO_UPLOAD);
+  }, []);
+
+  // Navigation handler: Photo upload → Input form
+  const handlePhotoSelected = useCallback(({ photo, processingService, processingState }) => {
+    logger.log("Photo selected, navigating to input form", {
+      photoSize: `${(photo.size / 1024).toFixed(1)} KB`,
+      processingState: processingState?.state,
+    });
+
+    setUploadedPhoto(photo);
+    processingServiceRef.current = processingService;
+    setProcessingStatus(processingState || { state: 'idle' });
+
+    // Subscribe to processing updates
+    if (processingService) {
+      const unsubscribe = processingService.on((status) => {
+        setProcessingStatus(status);
+      });
+      // Store unsubscribe for cleanup (we'll rely on reset instead)
+    }
+
+    setScreen(SCREENS.INPUT);
+  }, []);
+
+  // Navigation handler: Change photo → Back to photo upload
+  // Helper function to wait for processing to complete
+  const waitForProcessing = (service) => {
+    return new Promise((resolve, reject) => {
+      if (service.isDone()) {
+        resolve(service.getStatus());
+        return;
+      }
+
+      const unsubscribe = service.on((status) => {
+        if (status.state === STATES.READY) {
+          unsubscribe();
+          resolve(status);
+        } else if (status.state === STATES.FAILED) {
+          unsubscribe();
+          reject(new Error(status.error || "Processing failed"));
+        }
+      });
+    });
+  };
+
   const handleGenerate = useCallback(async (data) => {
     // Create new AbortController for this generation
     abortControllerRef.current = new AbortController();
@@ -334,28 +369,93 @@ export default function App() {
     try {
       let characterImage;
 
-      // Step 1: Get character image (API or local file)
-      // In dev mode, skip API if EITHER extraction OR image generation is disabled
-      // (since both require the API, skipping either means using local character file)
+      // Step 1: Get character image
+      // Priority: 1) Background processing service (if ready), 2) Dev mode local file, 3) API call
+      const service = processingServiceRef.current;
       const shouldSkipAPI = data.devMode && (data.skipExtraction || data.skipImageGeneration);
 
-      if (shouldSkipAPI && data.characterFile) {
+      // Check if photo is fully processed (extraction + generation + evaluation + bg removal)
+      const isPhotoProcessed = service?.isPhotoFullyProcessed?.() || false;
+      const serviceState = service?.getStatus()?.state;
+      const processingStarted = serviceState && serviceState !== 'idle';
+
+      logger.log("Step 1: Checking photo processing status", {
+        isPhotoProcessed,
+        serviceState,
+        processingStarted,
+        isImageReady: service?.isImageReady(),
+      });
+
+      // If photo is not processed, wait for processing to complete before video generation
+      if (service && !isPhotoProcessed && processingStarted && !service.isDone()) {
+        logger.log("Step 1: Photo not fully processed, waiting for processing to complete");
+        console.log("[App] Waiting for photo processing to complete (extraction + generation + evaluation + bg removal)...");
+
+        try {
+          const status = await waitForProcessing(service);
+          characterImage = status.processedImage;
+
+          logger.log("Step 1 complete: Photo processing finished", {
+            imageLength: characterImage?.length,
+            isPhotoProcessed: status.isPhotoProcessed,
+          });
+          console.log("[App] Photo processing complete");
+        } catch (processingError) {
+          // Processing failed - use fallback image from service (original with bg removed)
+          logger.warn("Step 1: Photo processing failed, using fallback", processingError.message);
+          console.log("[App] Photo processing failed, using fallback image");
+          characterImage = service.getStatus().processedImage;
+        }
+      } else if (service?.isImageReady() && isPhotoProcessed) {
+        // Use already processed image from background service
+        logger.log("Step 1: Using pre-processed image from background service");
+        console.log("[App] Using pre-processed image (photo processing complete)");
+        characterImage = service.getStatus().processedImage;
+
+        logger.log("Step 1 complete: Pre-processed image ready", {
+          imageLength: characterImage?.length,
+        });
+      } else if (processingStarted && !service.isDone()) {
+        // Processing started but not complete - wait for it
+        logger.log("Step 1: Background processing active, waiting", { state: serviceState });
+        console.log("[App] Background processing active, waiting...");
+
+        try {
+          const status = await waitForProcessing(service);
+          characterImage = status.processedImage;
+
+          logger.log("Step 1 complete: Background processing finished", {
+            imageLength: characterImage?.length,
+          });
+          console.log("[App] Background processing complete");
+        } catch (processingError) {
+          // Processing failed - use fallback image from service
+          logger.warn("Step 1: Background processing failed, using fallback", processingError.message);
+          console.log("[App] Background processing failed, using fallback image");
+          characterImage = service.getStatus().processedImage;
+        }
+      } else if (processingStarted && service.isDone()) {
+        // Already done - use whatever result we have (could be fallback)
+        characterImage = service.getStatus().processedImage;
+        
+        logger.log("Step 1: Using completed processing result", {
+          imageLength: characterImage?.length,
+          state: serviceState,
+        });
+        console.log("[App] Using completed processing result");
+      } else if (shouldSkipAPI && data.characterFile) {
+        // Dev mode: use local character file
         logger.log("Step 1: Using local character file (dev mode - skipping API)", {
           fileName: data.characterFile.name,
           fileSize: `${(data.characterFile.size / 1024).toFixed(1)} KB`,
           fileType: data.characterFile.type,
         });
         console.log("[App] Dev mode enabled - using local character file");
-        
-        // Convert the file to a base64 data URL
+
         characterImage = await new Promise((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = () => {
-            resolve(reader.result);
-          };
-          reader.onerror = () => {
-            reject(new Error("Failed to read character file"));
-          };
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error("Failed to read character file"));
           reader.readAsDataURL(data.characterFile);
         });
 
@@ -363,35 +463,29 @@ export default function App() {
           dataUrlLength: characterImage.length,
         });
         console.log("[App] Character file loaded, skipping API calls");
-      } else {
-        // Normal mode OR dev mode with API enabled: call backend API
-        // Check network status before making API call
+      }
+
+      // Fallback: call API directly if no processed image available
+      if (!characterImage) {
         if (!navigator.onLine) {
           throw new Error("No internet connection. Please check your network and try again.");
         }
-        
-        // Prepare form data for API - single couple photo
-        const apiFormData = new FormData();
-        apiFormData.append("photo", data.photo); // Couple photo
 
-        logger.log("Step 1: Calling backend API", {
+        const apiFormData = new FormData();
+        apiFormData.append("photo", data.photo);
+
+        logger.log("Step 1: Calling backend API (fallback)", {
           photoName: data.photo.name,
           photoSize: `${(data.photo.size / 1024).toFixed(1)} KB`,
           photoType: data.photo.type,
         });
         console.log("[App] Calling backend API...");
 
-        // Call backend API with retry logic
         const startApiCall = performance.now();
-        let response;
-        try {
-          response = await fetchWithRetry(`${API_URL}/api/generate`, {
-            method: "POST",
-            body: apiFormData,
-          }, MAX_RETRIES, signal);
-        } catch (apiError) {
-          throw apiError;
-        }
+        const response = await fetchWithRetry(`${API_URL}/api/generate`, {
+          method: "POST",
+          body: apiFormData,
+        }, MAX_RETRIES, signal);
 
         logger.log("Step 1 response received", {
           status: response.status,
@@ -399,7 +493,6 @@ export default function App() {
           duration: `${(performance.now() - startApiCall).toFixed(0)}ms`,
         });
 
-        // Defensive check: ensure response is JSON before parsing
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
           throw new Error('Server returned non-JSON response. Check API URL configuration.');
@@ -423,7 +516,12 @@ export default function App() {
       }
 
       // Step 2: Remove background (conditionally based on toggle)
-      if (data.skipBackgroundRemoval) {
+      // Note: Background removal is already done by the processing service, so skip if we used it
+      const usedProcessingService = service?.isImageReady() || (service && !service.isDone());
+      if (usedProcessingService) {
+        logger.log("Step 2: Skipping background removal (already done by processing service)");
+        console.log("[App] Background already removed by processing service");
+      } else if (data.skipBackgroundRemoval) {
         logger.log("Step 2: Skipping background removal (dev mode toggle)");
         console.log("[App] Skipping background removal (dev mode)");
       } else {
@@ -554,15 +652,20 @@ export default function App() {
   }, []);
 
   const handleReset = useCallback(() => {
-    setScreen(SCREENS.INPUT);
+    // Reset processing state
+    if (processingServiceRef.current) {
+      processingServiceRef.current.cancel();
+    }
+    resetImageProcessingService();
+    processingServiceRef.current = null;
+
+    // Reset all state and go back to sample video
+    setScreen(SCREENS.SAMPLE_VIDEO);
     setFormData(null);
     setFinalInvite(null);
+    setUploadedPhoto(null);
+    setProcessingStatus({ state: 'idle' });
     setError(null);
-  }, []);
-
-  const handleOnboardingComplete = useCallback(() => {
-    markOnboardingSeen();
-    setScreen(SCREENS.INPUT);
   }, []);
 
   // Loading fallback for lazy-loaded components
@@ -606,10 +709,35 @@ export default function App() {
         </div>
       </header>
 
+      {/* Sample Video Screen */}
+      {screen === SCREENS.SAMPLE_VIDEO && (
+        <SampleVideoScreen onProceed={handleSampleVideoComplete} />
+      )}
+
+      {/* Photo Upload Screen */}
+      {screen === SCREENS.PHOTO_UPLOAD && (
+        <PhotoUploadScreen
+          onPhotoSelected={handlePhotoSelected}
+          apiUrl={API_URL}
+        />
+      )}
+
+      {/* Input Form Screen */}
+      {screen === SCREENS.INPUT && (
+        <InputScreen
+          onGenerate={handleGenerate}
+          error={error}
+          photo={uploadedPhoto}
+        />
+      )}
+
+      {/* Loading Screen */}
+      {screen === SCREENS.LOADING && (
+        <LoadingScreen completed={loadingCompleted} onCancel={handleCancel} />
+      )}
+
+      {/* Result Screen (lazy loaded) */}
       <Suspense fallback={<LoadingFallback />}>
-        {screen === SCREENS.ONBOARDING && (
-          <OnboardingScreen onComplete={handleOnboardingComplete} />
-        )}
         {screen === SCREENS.RESULT && (
           <ResultScreen
             inviteVideo={finalInvite}
@@ -619,11 +747,6 @@ export default function App() {
           />
         )}
       </Suspense>
-      
-      {screen === SCREENS.INPUT && (
-        <InputScreen onGenerate={handleGenerate} error={error} />
-      )}
-      {screen === SCREENS.LOADING && <LoadingScreen completed={loadingCompleted} onCancel={handleCancel} />}
     </div>
   );
 }

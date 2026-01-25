@@ -1,6 +1,16 @@
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import { createDevLogger } from "./devLogger.js";
+import { exec } from "child_process";
+import { promisify } from "util";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const execAsync = promisify(exec);
 
 const logger = createDevLogger("Gemini");
 
@@ -25,7 +35,7 @@ const genAI = useVertexAI
 /**
  * Analyze a couple photo using ChatGPT (GPT-4 Vision) to extract detailed descriptions
  */
-async function analyzePhoto(photo, requestId = "") {
+export async function analyzePhoto(photo, requestId = "") {
   logger.log(`[${requestId}] Starting photo analysis with ChatGPT`, {
     photoMimetype: photo?.mimetype,
     photoBufferLen: photo?.buffer?.length,
@@ -67,7 +77,7 @@ For **Groom** (for illustration):
 * hairstyle (be very detailed - for accurate illustration)
 * eye_color
 * eye_size
-* body_type
+* body_shape
 * facial_hair_style
 * face_shape
 * spectacles
@@ -293,7 +303,7 @@ Choose from:
   let response;
   try {
     response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "user",
@@ -312,11 +322,7 @@ Choose from:
 
   const apiDuration = performance.now() - startTime;
   logger.log(`[${requestId}] OpenAI response received`, {
-    duration: `${apiDuration.toFixed(0)}ms`,
-    hasChoices: !!response.choices,
-    choicesLen: response.choices?.length,
-    finishReason: response.choices?.[0]?.finish_reason,
-    totalTokens: response.usage?.total_tokens,
+    duration: `${apiDuration.toFixed(0)}ms`
   });
 
   const responseText = response.choices[0]?.message?.content;
@@ -369,10 +375,6 @@ Choose from:
       parsed.groom.skin_color = parsed.groom.coloring;
       delete parsed.groom.coloring;
     }
-    if (parsed.groom.body_type) {
-      parsed.groom.body_shape = parsed.groom.body_type;
-      delete parsed.groom.body_type;
-    }
   }
 
   logger.log(`[${requestId}] Photo analysis complete`, {
@@ -384,403 +386,74 @@ Choose from:
 }
 
 /**
- * Evaluate a generated wedding image using GPT-4 Vision against the quality framework
- * Uses soft gating rules that only reject when multiple rules are violated or one is severe.
- * Returns { passed: boolean, score: number, softRulesPassed: boolean, softRulesViolations: string[], recommendation: string, details: object }
+ * Count people in an image using YOLOv8 via Python script
+ * Returns { count: number, error: string | null }
+ */
+async function countPeopleWithYOLO(imageBase64, requestId = "") {
+  logger.log(`[${requestId}] Starting person count with YOLOv8`);
+  const startTime = performance.now();
+
+  // Write base64 to temp file
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "yolo-"));
+  const b64Path = path.join(tempDir, "image.b64");
+
+  try {
+    await fs.writeFile(b64Path, imageBase64);
+
+    const pythonScript = path.join(__dirname, "count_people.py");
+    const { stdout, stderr } = await execAsync(`python3 "${pythonScript}" "${b64Path}"`, {
+      timeout: 30000, // 30 second timeout
+    });
+
+    const duration = performance.now() - startTime;
+
+    const result = JSON.parse(stdout.trim());
+    logger.log(`[${requestId}] YOLO person count complete`, {
+      duration: `${duration.toFixed(0)}ms`,
+      count: result.count,
+      error: result.error,
+    });
+
+    return result;
+  } catch (error) {
+    logger.error(`[${requestId}] YOLO count error`, error);
+    return { count: 0, error: error.message };
+  } finally {
+    // Cleanup temp files
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Evaluate a generated wedding image using YOLOv8 to count people
+ * Returns { passed: boolean, characterCount: number }
  */
 async function evaluateGeneratedImage(imageBase64, mimeType, requestId = "") {
-  logger.log(`[${requestId}] Starting image evaluation with GPT-4o`);
-  const evaluationPrompt = `You are an expert image quality evaluator for wedding invitation illustrations.
-Evaluate the provided image against this framework and return a structured JSON response.
-
-Your goal is to penalize deviations proportionally, rejecting only when the image clearly fails to meet wedding-invite suitability — except for the mandatory human/two-character rules below.
-
-1. HARD INVARIANTS (Auto-Reject if violated)
-
-These must always be satisfied.
-
-1.1 Subject Integrity - CHARACTER COUNT IS CRITICAL
-
-COUNT THE NUMBER OF PEOPLE/CHARACTERS CAREFULLY:
-- The image MUST contain EXACTLY 2 people (one bride, one groom)
-- If you see 3, 4, or more people/figures → IMMEDIATE REJECT
-- If you see duplicate/repeated characters (same person shown twice) → IMMEDIATE REJECT
-- If you see mirror images or reflections showing extra people → IMMEDIATE REJECT
-
-Both characters must be clearly human
-
-No animals, humanoid creatures, dolls, mannequins, fantasy beings, silhouettes, or partial figures
-
-No third person, reflections of people, background figures, or framed portraits
-
-IMPORTANT: Before evaluating anything else, COUNT the distinct human figures. If count ≠ 2, set hard_invariants.passed = false immediately.
-
-Any violation → immediate REJECT.
-
-2. SOFT GATING RULES (Reject only if MULTIPLE violated or one is severe)
-
-These are high-priority constraints, but allow minor, non-distracting variance.
-
-2.1 Composition & Background
-
-Background should be plain white or near-white (very subtle gradients allowed)
-
-No prominent props, furniture, scenery, or extra people
-
-No visible text, logos, watermarks, or UI artifacts
-
-Both characters should be mostly visible (minor cropping allowed if feet/hair slightly clipped)
-
-2.2 Pose & Camera
-
-Prefer standing side-by-side
-
-Prefer holding hands or clear visual pairing
-
-Mostly forward-facing (slight 3/4 acceptable)
-
-No extreme camera angles or perspective distortion
-
-No dynamic actions like dancing/running
-
-2.3 Attire Guidance (Penalize drift, don’t auto-fail)
-
-Minor deviations in fabric shade, embroidery density, or placement are acceptable if the overall look remains clearly bridal.
-
-Groom expected:
-
-Knee-length sherwani in light beige/cream tones
-
-Golden floral pattern preferred
-
-Teal peacock embroidery or equivalent Indian motif
-
-Deep magenta/maroon dupatta with gold accents
-
-White or off-white churidar
-
-Traditional mojaris/juttis
-
-Bride expected:
-
-Lehenga choli in blush/pastel pink family
-
-Voluminous A-line lehenga with floral/mandala embroidery
-
-Matching blouse with floral threadwork
-
-Light pink sheer dupatta with gold border
-
-Gold jewelry set (necklace, jhumkas, maang tikka)
-
-3. ATTRIBUTE FIDELITY (40 points max)
-
-Score each from 0–5
-(5 = strong match, 3 = acceptable variance, 0 = incorrect/missing)
-
-Bride (20 pts):
-height, skin_color, hairstyle, eye_color, eye_size, body_shape, face_shape, spectacles
-
-Groom (20 pts):
-height, skin_color, hairstyle, eye_color, eye_size, body_shape, facial_hair, face_shape, spectacles
-
-Notes:
-
-Skin color should broadly match tone family; exact undertone mismatch is a minor penalty.
-
-Groom hairstyle should be broadly consistent in length and form; texture mismatches are minor.
-
-4. POSE, EXPRESSION & EMOTIONAL ACCURACY (15 points max)
-
-Pose Accuracy (5): Natural couple stance, visually paired
-
-Expression (5): Pleasant, wedding-appropriate (neutral acceptable; dull or exaggerated penalized)
-
-Cultural Appropriateness (5): Indian wedding appropriate, minimal Western stylization
-
-5. STYLE COMPLIANCE: GHIBLI-INSPIRED (20 points max)
-
-Visual Language (10): Soft shading, gentle outlines, warm light, expressive eyes
-
-Stylization Control (10): Semi-realistic with light stylization; avoid chibi, caricature, or hyper-real textures
-
-Hybrid styles are allowed if Ghibli influence is clearly readable.
-
-6. RENDERING & VISUAL QUALITY (15 points max)
-
-Technical Cleanliness (5): No major glitches or broken anatomy
-
-Edge & Detail Quality (5): Clean silhouettes, legible embroidery/jewelry
-
-Color Discipline (5): Harmonious palette; avoid neon or muddy colors
-
-7. COMPOSITION & BALANCE (10 points max)
-
-Bride and groom visually balanced
-
-Centered or near-centered composition
-
-No strong edge crowding
-
-White space reasonably even
-
-OUTPUT FORMAT (JSON only)
-{
-  "hard_invariants": {
-    "passed": true/false,
-    "character_count": <number of distinct human figures you counted>,
-    "violations": ["list of violations if any"]
-  },
-  "soft_rules": {
-    "passed": true/false,
-    "violations": ["list of major or multiple violations if any"]
-  },
-  "scores": {
-    "attribute_fidelity": {
-      "bride": {"height": 0-5, "skin_color": 0-5, "hairstyle": 0-5, "eye_color": 0-5, "eye_size": 0-5, "body_shape": 0-5, "face_shape": 0-5, "spectacles": 0-5},
-      "groom": {"height": 0-5, "skin_color": 0-5, "hairstyle": 0-5, "eye_color": 0-5, "eye_size": 0-5, "body_shape": 0-5, "facial_hair": 0-5, "face_shape": 0-5, "spectacles": 0-5},
-      "total": 0-40
-    },
-    "pose_expression": {
-      "pose_accuracy": 0-5,
-      "expression": 0-5,
-      "cultural_appropriateness": 0-5,
-      "total": 0-15
-    },
-    "style_compliance": {
-      "visual_language": 0-10,
-      "stylization_control": 0-10,
-      "total": 0-20
-    },
-    "rendering_quality": {
-      "technical_cleanliness": 0-5,
-      "edge_detail": 0-5,
-      "color_discipline": 0-5,
-      "total": 0-15
-    },
-    "composition_balance": {
-      "score": 0-10
-    },
-    "total_score": 0-100
-  },
-  "skin_color_accuracy": {
-    "bride": "description of how well skin tone matches",
-    "groom": "description of how well skin tone matches"
-  },
-  "hairstyle_accuracy": {
-    "groom": "description of how well hairstyle matches"
-  },
-  "issues": ["specific issues found"],
-  "recommendation": "ACCEPT" or "REJECT"
-}`;
-
-  const startTime = performance.now();
-  
-  try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: evaluationPrompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${imageBase64}`,
-              },
-            },
-          ],
-        },
-      ],
-      max_tokens: 2000,
-    });
-
-    const evalDuration = performance.now() - startTime;
-    logger.log(`[${requestId}] Evaluation response received`, {
-      duration: `${evalDuration.toFixed(0)}ms`,
-      totalTokens: response.usage?.total_tokens,
-    });
-
-    const responseText = response.choices[0]?.message?.content;
-    if (!responseText) {
-      logger.error(`[${requestId}] Evaluation returned no response`, "Empty response");
-      console.error("[Evaluation] GPT did not return a response");
-      return { passed: false, score: 0, softRulesPassed: false, softRulesViolations: ["Evaluation failed"], recommendation: "REJECT", details: null };
-    }
-
-    // Extract JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      logger.error(`[${requestId}] Failed to parse evaluation JSON`, responseText.slice(0, 200));
-      console.error("[Evaluation] Failed to parse evaluation response");
-      return { passed: false, score: 0, softRulesPassed: false, softRulesViolations: ["Parse error"], recommendation: "REJECT", details: null };
-    }
-
-    const evaluation = JSON.parse(jsonMatch[0]);
-
-    const hardRulesPassed = evaluation.hard_invariants?.passed !== false;
-    const characterCount = evaluation.hard_invariants?.character_count;
-    const softRulesPassed = evaluation.soft_rules?.passed === true;
-    const totalScore = evaluation.scores?.total_score || 0;
-    const softRulesViolations = evaluation.soft_rules?.violations || [];
-    const recommendation = evaluation.recommendation || (softRulesPassed ? "ACCEPT" : "REJECT");
-
-    // CRITICAL: Hard invariants must pass (especially character count = 2)
-    // Pass if recommendation is ACCEPT, or if soft rules pass and score meets threshold
-    // But NEVER pass if hard invariants failed
-    const passed = hardRulesPassed && (recommendation === "ACCEPT" || (softRulesPassed && totalScore >= 75));
-
-    logger.log(`[${requestId}] Evaluation complete`, {
-      score: totalScore,
-      hardRulesPassed,
-      characterCount,
-      softRulesPassed,
-      recommendation,
-      passed,
-      softRulesViolations: softRulesViolations.length > 0 ? softRulesViolations : "none",
-      issues: evaluation.issues?.length > 0 ? evaluation.issues : "none",
-    });
-
-    console.log(`[Evaluation] Score: ${totalScore}/100, Character count: ${characterCount}, Hard rules: ${hardRulesPassed ? 'PASS' : 'FAIL'}, Soft rules: ${softRulesPassed}, Recommendation: ${recommendation}, Overall: ${passed ? 'PASS' : 'FAIL'}`);
-    if (softRulesViolations.length > 0) {
-      console.log(`[Evaluation] Soft rule violations: ${softRulesViolations.join(', ')}`);
-    }
-    if (evaluation.issues?.length > 0) {
-      console.log(`[Evaluation] Issues: ${evaluation.issues.join(', ')}`);
-    }
-
-    return {
-      passed,
-      score: totalScore,
-      hardRulesPassed,
-      characterCount,
-      softRulesPassed,
-      softRulesViolations,
-      recommendation,
-      details: evaluation
-    };
-  } catch (error) {
-    logger.error(`[${requestId}] Evaluation error`, error);
-    console.error("[Evaluation] Error during evaluation:", error.message);
-    // On evaluation error, we'll consider it as failed to be safe
-    return { passed: false, score: 0, softRulesPassed: false, softRulesViolations: [`Evaluation error: ${error.message}`], recommendation: "REJECT", details: null };
-  }
+  logger.log(`[${requestId}] Starting image evaluation with YOLOv8`);
+
+  const result = await countPeopleWithYOLO(imageBase64, requestId);
+
+  const characterCount = result.count;
+  const passed = characterCount === 2;
+
+  logger.log(`[${requestId}] Evaluation complete`, {
+    characterCount,
+    passed,
+    error: result.error,
+  });
+
+  console.log(`[Evaluation] YOLOv8 person count: ${characterCount}, ${passed ? 'PASS' : 'FAIL'}`);
+
+  return {
+    passed,
+    score: passed ? 100 : 0,
+    hardRulesPassed: passed,
+    characterCount,
+    recommendation: passed ? "ACCEPT" : "REJECT",
+    details: { character_count: characterCount, yolo_error: result.error }
+  };
 }
 
-/**
- * Generate image with evaluation and retry logic
- * Attempts up to maxAttempts times, regenerating if evaluation fails
- */
-async function generateWithEvaluation(descriptions, maxAttempts = 3, requestId = "") {
-  let bestResult = null;
-  let bestScore = -1;
-  
-  logger.log(`[${requestId}] Starting generation with evaluation (max ${maxAttempts} attempts)`);
-  
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    logger.log(`[${requestId}] Generation attempt ${attempt}/${maxAttempts}`);
-    console.log(`[Generator] Generation attempt ${attempt}/${maxAttempts}`);
-    
-    try {
-      // Generate the image
-      logger.log(`[${requestId}] Calling Gemini for image generation`);
-      const result = await generateWithGemini3(descriptions, requestId);
-      
-      // Evaluate the generated image
-      logger.log(`[${requestId}] Evaluating generated image`);
-      console.log(`[Generator] Evaluating generated image (attempt ${attempt})...`);
-      const evaluation = await evaluateGeneratedImage(result.imageData, result.mimeType, requestId);
-
-      // Check if hard invariants passed (character count, etc.)
-      const hardRulesPassed = evaluation.details?.hard_invariants?.passed !== false;
-      const characterCount = evaluation.details?.hard_invariants?.character_count;
-
-      if (characterCount && characterCount !== 2) {
-        logger.log(`[${requestId}] HARD REJECT: Wrong character count (${characterCount})`);
-        console.log(`[Generator] REJECTED: Image has ${characterCount} characters instead of 2`);
-        // Don't track this as best result - hard invariant violation
-        continue;
-      }
-
-      // Track the best result so far (only if hard invariants pass)
-      if (hardRulesPassed && evaluation.score > bestScore) {
-        bestScore = evaluation.score;
-        bestResult = {
-          ...result,
-          evaluation
-        };
-        logger.log(`[${requestId}] New best score: ${bestScore}/100`);
-      }
-      
-      // If evaluation passes, return immediately
-      if (evaluation.passed) {
-        logger.log(`[${requestId}] Image PASSED evaluation on attempt ${attempt}`, {
-          score: evaluation.score,
-        });
-        console.log(`[Generator] Image passed evaluation on attempt ${attempt} with score ${evaluation.score}/100`);
-        return bestResult;
-      }
-      
-      // Log why it failed
-      logger.log(`[${requestId}] Attempt ${attempt} FAILED evaluation`, {
-        score: evaluation.score,
-        softRulesPassed: evaluation.softRulesPassed,
-        softRulesViolations: evaluation.softRulesViolations,
-        recommendation: evaluation.recommendation,
-      });
-      console.log(`[Generator] Attempt ${attempt} failed evaluation (score: ${evaluation.score}/100, recommendation: ${evaluation.recommendation})`);
-      if (!evaluation.softRulesPassed && evaluation.softRulesViolations?.length > 0) {
-        console.log(`[Generator] Soft rule violations: ${evaluation.softRulesViolations.join(', ')}`);
-      }
-      
-      if (attempt < maxAttempts) {
-        logger.log(`[${requestId}] Waiting before retry...`);
-        console.log(`[Generator] Regenerating with original prompt...`);
-        // Small delay before retry
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    } catch (error) {
-      logger.error(`[${requestId}] Attempt ${attempt} error`, error);
-      console.error(`[Generator] Attempt ${attempt} failed with error:`, error.message);
-      
-      if (attempt === maxAttempts) {
-        // If this was the last attempt and we have a previous result, return it
-        if (bestResult) {
-          logger.log(`[${requestId}] Returning best result from previous attempts`, {
-            score: bestScore,
-          });
-          console.log(`[Generator] Returning best result from previous attempts (score: ${bestScore}/100)`);
-          return bestResult;
-        }
-        throw error;
-      }
-      
-      // Wait before retry on error
-      logger.log(`[${requestId}] Waiting 2s before retry after error`);
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
-  }
-  
-  // If we've exhausted all attempts but have a result, return the best one
-  if (bestResult) {
-    logger.log(`[${requestId}] All attempts exhausted, returning best result`, {
-      score: bestScore,
-      threshold: 85,
-    });
-    console.log(`[Generator] All ${maxAttempts} attempts completed. Returning best result with score ${bestScore}/100`);
-    console.log(`[Generator] Note: Image did not meet acceptance criteria but was the best generated`);
-    return bestResult;
-  }
-
-  // If no best result, it means all attempts had hard invariant failures (e.g., wrong character count)
-  logger.error(`[${requestId}] All ${maxAttempts} attempts failed hard invariants (likely character count issues)`);
-  throw new Error(`Failed to generate valid image after ${maxAttempts} attempts. All generated images had incorrect character count (should be exactly 2 people).`);
-}
-
-/**
- * Retry helper with exponential backoff for transient errors
- */
 async function retryWithBackoff(fn, maxRetries = 3, baseDelayMs = 2000, requestId = "") {
   let lastError;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -810,7 +483,7 @@ async function retryWithBackoff(fn, maxRetries = 3, baseDelayMs = 2000, requestI
 }
 
 /**
- * Generate wedding portrait using Gemini 3 Pro Image Preview
+ * Generate image using Gemini 3 Pro Image Preview
  */
 async function generateWithGemini3(descriptions, requestId = "") {
   logger.log(`[${requestId}] Preparing Gemini 3 Pro generation prompt`);
@@ -824,7 +497,7 @@ async function generateWithGemini3(descriptions, requestId = "") {
     return attr.primary || fallback;
   };
 
-  const prompt = `Create a full-body, front-facing illustration of a bride and groom in a Studio Ghibli–inspired style (soft, painterly, warm colors, gentle outlines, slightly whimsical but realistic proportions).
+  const prompt = `Create a full-body, front-facing illustration of an Rajasthani bride and groom in a Studio Ghibli–inspired style (soft, painterly, warm colors, gentle outlines, slightly whimsical but realistic proportions).
 
 CRITICAL RULE - CHARACTER COUNT:
 - Draw EXACTLY ONE bride and EXACTLY ONE groom (2 people total)
@@ -953,10 +626,17 @@ Full-body visible, from head to toe`;
   const startTime = performance.now();
   const response = await retryWithBackoff(async () => {
     return await genAI.models.generateContent({
-      model: "gemini-3-pro-image-preview",
+      model: "gemini-2.5-flash-image",
       contents: prompt,
       config: {
         responseModalities: ["image", "text"],
+        creativity: "low",
+        generationConfig: {
+          temperature: 0,
+          topP: 0,
+          seed: 12345,
+          candidateCount: 1,
+        },
       },
     });
   }, 3, 3000, requestId);
@@ -993,19 +673,12 @@ Full-body visible, from head to toe`;
   };
 }
 
-/**
- * Main function: Analyze photo with ChatGPT, generate with Gemini 3 Pro, evaluate and retry if needed
- */
 export async function generateWeddingCharacters(photo, requestId = "") {
   const totalStartTime = performance.now();
-  
+
   logger.log(`[${requestId}] ========== STARTING WEDDING PORTRAIT GENERATION ==========`);
   console.log("[Generator] Starting wedding portrait generation");
-  
-  // Step 1: Analyze photo to extract descriptions using ChatGPT
-  logger.log(`[${requestId}] STEP 1: Analyzing photo with ChatGPT`);
-  console.log("[Generator] Step 1: Analyzing photo with ChatGPT...");
-  
+
   const analysisStartTime = performance.now();
   const descriptions = await analyzePhoto(photo, requestId);
   const analysisDuration = performance.now() - analysisStartTime;
@@ -1017,16 +690,60 @@ export async function generateWeddingCharacters(photo, requestId = "") {
   });
   console.log("[Generator] Photo analysis complete:", JSON.stringify(descriptions, null, 2));
 
-  // Step 2: Generate with Gemini 3 Pro, evaluate with GPT-4 Vision, retry up to 3 times if needed
-  logger.log(`[${requestId}] STEP 2: Generating image with Gemini 3 Pro (with evaluation & retry)`);
-  console.log("[Generator] Step 2: Generating image with Gemini 3 Pro (with evaluation & retry)...");
-  
+  // Step 2: Generate with Gemini 2.5 Flash Image, evaluate with GPT-4 Vision, retry up to 3 times if needed
+  console.log("[Generator] Step 2: Generating image with Gemini 2.5 Flash Image (with evaluation & retry)...");
+
   const generationStartTime = performance.now();
-  const result = await generateWithEvaluation(descriptions, 3, requestId);
+  const maxAttempts = 3;
+  let result;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      logger.log(`[${requestId}] Generation attempt ${attempt}`, { attempt });
+      console.log(`[Generator] Generation attempt ${attempt}`);
+
+      const generatedImage = await generateWithGemini3(descriptions, requestId);
+      const evaluation = await evaluateGeneratedImage(generatedImage.imageData, generatedImage.mimeType, requestId);
+
+      logger.log(`[${requestId}] Evaluation for attempt ${attempt}`, {
+        passed: evaluation.passed,
+        characterCount: evaluation.characterCount,
+        score: evaluation.score,
+      });
+
+      result = {
+        imageData: generatedImage.imageData,
+        mimeType: generatedImage.mimeType,
+        evaluation,
+      };
+
+      console.log(`[Generator] Evaluation attempt ${attempt} score: ${evaluation.score}, passed: ${evaluation.passed}`);
+
+      if (evaluation.passed) {
+        break;
+      }
+
+      if (attempt < maxAttempts) {
+        console.log("[Generator] Evaluation failed, retrying...");
+      }
+    } catch (error) {
+      logger.error(`[${requestId}] Generation attempt ${attempt} failed`, error);
+      console.error(`[Generator] Attempt ${attempt} failed`, error);
+      if (attempt === maxAttempts) {
+        throw error;
+      }
+      console.log("[Generator] Retrying generation...");
+    }
+  }
+
+  if (!result) {
+    throw new Error("Generation failed to produce a result");
+  }
+
   const generationDuration = performance.now() - generationStartTime;
 
   const totalDuration = performance.now() - totalStartTime;
-  
+
   logger.log(`[${requestId}] ========== GENERATION COMPLETE ==========`, {
     totalDuration: `${totalDuration.toFixed(0)}ms`,
     analysisDuration: `${analysisDuration.toFixed(0)}ms`,

@@ -86,7 +86,7 @@ const LAYOUT_V4 = {
   },
 
   // Base font size (N)
-  baseFontSize: 54,
+  baseFontSize: 50,
 };
 
 // ============================================================================
@@ -441,10 +441,11 @@ function drawNamesText(ctx, brideName, groomName, pinkRoseImg) {
   const y = CANVAS_HEIGHT * layout.yPercent;
   const maxWidth = CANVAS_WIDTH * layout.maxWidthPercent;
   const idealSize = LAYOUT_V4.baseFontSize * layout.fontRatio;
-  const minSize = LAYOUT_V4.baseFontSize * 1.2;
-  
+  const baseFontSize = LAYOUT_V4.baseFontSize;
+
   // Reference combined character count for ideal font size (bride + groom names including spaces)
   const IDEAL_COMBINED_LENGTH = 10;
+  const MIN_FONT_SCALE = 0.35; // Allow fonts to shrink to 35% of base for very long names
 
   // Format names with first letter capitalized for cursive elegance
   const brideNameFormatted = capitalizeFirst(brideName);
@@ -452,18 +453,15 @@ function drawNamesText(ctx, brideName, groomName, pinkRoseImg) {
   const ampersand = " & ";
   const fullText = `${brideNameFormatted}${ampersand}${groomNameFormatted}`;
 
-  // Calculate font size based on combined name length (including spaces)
-  // 15 chars (including spaces) is perfect; if more, scale down proportionally
-  const combinedNameLength = brideNameFormatted.length + groomNameFormatted.length + 3; // +3 for " & "
-  let adjustedIdealSize = idealSize;
-  
-  if (combinedNameLength > IDEAL_COMBINED_LENGTH) {
-    // Scale down proportionally: 15 chars = 100%, 20 chars = 75%, etc.
-    const scaleFactor = IDEAL_COMBINED_LENGTH / combinedNameLength;
-    adjustedIdealSize = idealSize * scaleFactor;
-    // Ensure we don't go below minimum size
-    adjustedIdealSize = Math.max(adjustedIdealSize, minSize);
-  }
+  // Combined length (spaces included) with zero guard
+  const combinedNameLength = Math.max(brideNameFormatted.length + groomNameFormatted.length + 3, 1);
+
+  // Scale down based on combined name length while keeping a sensible minimum scale
+  const lengthScale = Math.min(1, IDEAL_COMBINED_LENGTH / combinedNameLength);
+  const scaledIdealFactor = Math.max(lengthScale, MIN_FONT_SCALE);
+  const adjustedIdealSize = idealSize * scaledIdealFactor;
+
+  const minSize = Math.max(baseFontSize * MIN_FONT_SCALE, 32);
 
   const fontSize = calculateFontSize(
     ctx,

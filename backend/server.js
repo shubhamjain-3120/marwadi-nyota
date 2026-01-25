@@ -3,7 +3,7 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import { rateLimit } from "express-rate-limit";
-import { generateWeddingCharacters } from "./gemini.js";
+import { generateWeddingCharacters, analyzePhoto } from "./gemini.js";
 import { createDevLogger, isDevMode } from "./devLogger.js";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -138,6 +138,78 @@ app.get("/api/health", (req, res) => {
   logger.log("Health check requested");
   res.json({ status: "ok", devMode: isDevMode() });
 });
+
+// Photo extraction endpoint (extraction only, no generation)
+app.post(
+  "/api/extract",
+  upload.single("photo"),
+  async (req, res) => {
+    const requestId = Date.now().toString(36);
+    const startTime = performance.now();
+    
+    logger.log(`[${requestId}] Extract endpoint called`, {
+      hasFile: !!req.file,
+      fileSize: req.file ? `${(req.file.size / 1024).toFixed(1)} KB` : null,
+      fileMimeType: req.file?.mimetype,
+    });
+
+    try {
+      const photo = req.file;
+
+      // Validate input - require couple photo
+      if (!photo) {
+        logger.warn(`[${requestId}] Validation failed`, "No photo provided");
+        return res.status(400).json({
+          success: false,
+          error: "Couple photo is required",
+        });
+      }
+
+      // Security: Validate file content (magic bytes) - not just MIME type
+      if (!isValidImageBuffer(photo.buffer)) {
+        logger.warn(`[${requestId}] Validation failed`, "Invalid image file content");
+        return res.status(400).json({
+          success: false,
+          error: "Invalid image file. Please upload a valid JPEG, PNG, GIF, or WebP image.",
+        });
+      }
+
+      logger.log(`[${requestId}] [EXTRACTION] Step 1: Photo received, preparing for extraction`, {
+        photoSize: `${(photo.size / 1024).toFixed(1)} KB`,
+        photoMimeType: photo.mimetype,
+      });
+      console.log(`[Backend] [EXTRACTION] Step 1: Photo received, preparing for extraction`);
+
+      logger.log(`[${requestId}] [EXTRACTION] Step 2: Calling analyzePhoto function...`);
+      console.log(`[Backend] [EXTRACTION] Step 2: Calling analyzePhoto function...`);
+
+      // Extract features using photo analysis (extraction only)
+      const descriptions = await analyzePhoto(photo, requestId);
+
+      const totalDuration = performance.now() - startTime;
+      logger.log(`[${requestId}] [EXTRACTION] Step 3: Extraction complete - sending response to frontend`, {
+        totalDuration: `${totalDuration.toFixed(0)}ms`,
+        hasBride: !!descriptions.bride,
+        hasGroom: !!descriptions.groom,
+      });
+      console.log(`[Backend] [EXTRACTION] Step 3: Extraction complete - sending response to frontend (${totalDuration.toFixed(0)}ms)`);
+
+      res.json({
+        success: true,
+        descriptions,
+      });
+    } catch (error) {
+      const totalDuration = performance.now() - startTime;
+      logger.error(`[${requestId}] Extraction failed after ${totalDuration.toFixed(0)}ms`, error);
+      console.error("[Server] Extraction error:", error);
+
+      res.status(500).json({
+        success: false,
+        error: "Photo extraction failed. Please try again.",
+      });
+    }
+  }
+);
 
 // Main generation endpoint with rate limiting
 app.post(
@@ -402,7 +474,7 @@ app.post(
       const width = 720;
       const height = 1280;
 
-      // Text appears immediately (no fade animations for lower memory)
+      // Text appears immediately (no fade animations for lower memory); characters fade in later
 
       // Character positioning (matching client-side layout)
       // Character takes 60% of height, centered horizontally
@@ -419,6 +491,9 @@ app.post(
       // Font sizes (scaled for 720p)
       const namesFontSize = Math.round(54 * 2);
       const textFontSize = Math.round(54 * 1);
+      // Character animation timing (fade-in starts at third second)
+      const CHARACTER_FADE_START = 3;
+      const CHARACTER_FADE_DURATION = 1;
 
       // Escape special characters for FFmpeg drawtext
       const escapeText = (text) => text.replace(/'/g, "'\\''").replace(/:/g, "\\:");
@@ -432,15 +507,15 @@ app.post(
       // Layer 1: Scale video to canvas size
       // Layer 2: Overlay character image
       // Layer 3: Draw text overlays
-let filterComplex = `[0:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}[bg];`;
+      let filterComplex = `[0:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}[bg];`;
 
-if (characterImage) {
-  // Scale character image (no rgba conversion or fade needed)
-  filterComplex += `[1:v]scale=-1:${charHeight}[char];`;
-  filterComplex += `[bg][char]overlay=(W-w)/2:${charY}[vid];`;
-} else {
-  filterComplex += `[bg]copy[vid];`;
-}
+      if (characterImage) {
+        // Scale character image and fade in starting at 3s
+        filterComplex += `[1:v]scale=-1:${charHeight},format=rgba,fade=in:st=${CHARACTER_FADE_START}:d=${CHARACTER_FADE_DURATION}:alpha=1[char];`;
+        filterComplex += `[bg][char]overlay=(W-w)/2:${charY}[vid];`;
+      } else {
+        filterComplex += `[bg]copy[vid];`;
+      }
 
       // Add text overlays (no fade animations)
       // Names text (gold color, script font)

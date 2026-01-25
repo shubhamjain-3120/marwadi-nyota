@@ -1,20 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trackPageView } from "../utils/analytics";
 
 /**
- * Detailed Loading Screen with Multi-Stage Progress
+ * Loading Screen with New Progress Bar Logic
  *
  * Progress stages:
- * 1. 0-20%: Feature Extraction (1% every 1s to 10%, then 1% every 5s to 20%)
- * 2. 20-40%: Image Generation (1% every 1s to 30%, then 1% every 5s to 40%)
- * 3. 40-60%: Image Evaluation (1% every 1s to 50%, then 1% every 5s to 60%)
- * 4. 60-70%: Background Removal (1% every 1s to 65%, then 1% every 5s to 70%)
- * 5. 70-98%: Video Generation (1% every 1s to 90%, then 1% every 5s to 98%)
- * 6. 98-100%: Final completion (instant on backend finish)
+ * - 0-90%: Increase 1% every n seconds where n is random between 1-3 seconds
+ * - 90-98%: Increase 1% every 5 seconds
+ * - 98-100%: Wait for actual process completion, then jump to 100% immediately
  */
 
 export default function LoadingScreen({ completed = false, onCancel }) {
   const [progress, setProgress] = useState(0);
+  const progressTimeoutRef = useRef(null);
 
   // Track page view on mount
   useEffect(() => {
@@ -23,84 +21,51 @@ export default function LoadingScreen({ completed = false, onCancel }) {
 
   // Jump to 100% when completed prop becomes true
   useEffect(() => {
-    if (completed) {
+    if (completed && progress < 100) {
+      // Clear any pending timeouts
+      if (progressTimeoutRef.current) {
+        clearTimeout(progressTimeoutRef.current);
+        progressTimeoutRef.current = null;
+      }
       setProgress(100);
     }
-  }, [completed]);
+  }, [completed, progress]);
 
-  // Helper function to determine which stage we're in and what the timings should be
-  const getStageConfig = (currentProgress) => {
-    if (currentProgress < 10) {
-      return { fastTarget: 10, slowTarget: 20, fastInterval: 1000, slowInterval: 5000 }; // Extraction fast phase
-    } else if (currentProgress < 20) {
-      return { fastTarget: 10, slowTarget: 20, fastInterval: 1000, slowInterval: 5000 }; // Extraction slow phase
-    } else if (currentProgress < 30) {
-      return { fastTarget: 30, slowTarget: 40, fastInterval: 1000, slowInterval: 5000 }; // Image gen fast phase
-    } else if (currentProgress < 40) {
-      return { fastTarget: 30, slowTarget: 40, fastInterval: 1000, slowInterval: 5000 }; // Image gen slow phase
-    } else if (currentProgress < 50) {
-      return { fastTarget: 50, slowTarget: 60, fastInterval: 1000, slowInterval: 5000 }; // Evaluation fast phase
-    } else if (currentProgress < 60) {
-      return { fastTarget: 50, slowTarget: 60, fastInterval: 1000, slowInterval: 5000 }; // Evaluation slow phase
-    } else if (currentProgress < 65) {
-      return { fastTarget: 65, slowTarget: 70, fastInterval: 1000, slowInterval: 5000 }; // BG removal fast phase
-    } else if (currentProgress < 70) {
-      return { fastTarget: 65, slowTarget: 70, fastInterval: 1000, slowInterval: 5000 }; // BG removal slow phase
-    } else if (currentProgress < 90) {
-      return { fastTarget: 90, slowTarget: 98, fastInterval: 1000, slowInterval: 5000 }; // Video gen fast phase
-    } else if (currentProgress < 98) {
-      return { fastTarget: 90, slowTarget: 98, fastInterval: 1000, slowInterval: 5000 }; // Video gen slow phase
+  // Progress increment logic
+  useEffect(() => {
+    // Don't start if already completed or at 100%
+    if (completed || progress >= 100) return;
+
+    // Don't progress past 98% automatically - wait for completion signal
+    if (progress >= 98) return;
+
+    // Calculate delay based on current progress
+    let delay;
+    if (progress < 90) {
+      // 0-90%: Random delay between 1-3 seconds
+      delay = 1000 + Math.random() * 2000; // 1000ms to 3000ms
+    } else {
+      // 90-98%: Fixed 5 second delay
+      delay = 5000;
     }
-    return null; // Completed
-  };
 
-  // Fast progress phase (1% every 1 second)
-  useEffect(() => {
-    if (completed || progress >= 98) return;
-
-    const config = getStageConfig(progress);
-    if (!config || progress >= config.fastTarget) return;
-
-    const fastInterval = setInterval(() => {
+    // Schedule next progress increment
+    progressTimeoutRef.current = setTimeout(() => {
       setProgress((prev) => {
-        const nextProgress = prev + 1;
-        const stageConfig = getStageConfig(prev);
-        
-        // Don't exceed the fast target for this stage
-        if (nextProgress >= stageConfig.fastTarget) {
-          clearInterval(fastInterval);
-          return stageConfig.fastTarget;
-        }
-        return nextProgress;
+        // Don't exceed 98% automatically
+        if (prev >= 98) return prev;
+        return prev + 1;
       });
-    }, config.fastInterval);
+    }, delay);
 
-    return () => clearInterval(fastInterval);
-  }, [completed, progress]);
-
-  // Slow progress phase (1% every 5 seconds)
-  useEffect(() => {
-    if (completed || progress >= 98) return;
-
-    const config = getStageConfig(progress);
-    if (!config || progress < config.fastTarget || progress >= config.slowTarget) return;
-
-    const slowInterval = setInterval(() => {
-      setProgress((prev) => {
-        const nextProgress = prev + 1;
-        const stageConfig = getStageConfig(prev);
-        
-        // Don't exceed the slow target for this stage
-        if (nextProgress >= stageConfig.slowTarget) {
-          clearInterval(slowInterval);
-          return stageConfig.slowTarget;
-        }
-        return nextProgress;
-      });
-    }, config.slowInterval);
-
-    return () => clearInterval(slowInterval);
-  }, [completed, progress]);
+    // Cleanup timeout on unmount or when progress changes
+    return () => {
+      if (progressTimeoutRef.current) {
+        clearTimeout(progressTimeoutRef.current);
+        progressTimeoutRef.current = null;
+      }
+    };
+  }, [progress, completed]);
 
   return (
     <div className="loading-screen">

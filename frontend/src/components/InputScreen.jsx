@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { createDevLogger } from "../utils/devLogger";
 import { trackPageView, trackClick } from "../utils/analytics";
@@ -83,7 +83,11 @@ function saveCachedFormData(data) {
   }
 }
 
-export default function InputScreen({ onGenerate, error }) {
+export default function InputScreen({
+  onGenerate,
+  error,
+  photo,              // Passed from App (from PhotoUploadScreen)
+}) {
   // Rate limit state
   const [rateLimit, setRateLimit] = useState(() => getRateLimitState());
   
@@ -108,15 +112,10 @@ export default function InputScreen({ onGenerate, error }) {
     saveCachedFormData({ brideName, groomName, weddingDate, venue });
   }, [brideName, groomName, weddingDate, venue]);
 
-  // Photo state - single photo (couple photo)
-  const [photo, setPhoto] = useState(null);
-
   // Dev mode - enabled automatically when venue matches secret phrase
   const devMode = useMemo(() => {
     return venue.trim().toLowerCase() === DEV_MODE_VENUE.toLowerCase();
   }, [venue]);
-
-  const [devPhotoLoading, setDevPhotoLoading] = useState(false);
 
   // Dev mode toggles - control which steps to skip
   const [skipExtraction, setSkipExtraction] = useState(false);
@@ -125,38 +124,6 @@ export default function InputScreen({ onGenerate, error }) {
   const [skipVideoGeneration, setSkipVideoGeneration] = useState(false);
   const [forceServerConversion, setForceServerConversion] = useState(false);
 
-  // Auto-load dev character file into photo when dev mode is enabled (only if no photo yet)
-  useEffect(() => {
-    if (devMode && !photo) {
-      setDevPhotoLoading(true);
-      fetch("/assets/dev-character.png")
-        .then((res) => {
-          if (!res.ok) throw new Error("Failed to load dev character file");
-          return res.blob();
-        })
-        .then((blob) => {
-          // Use the blob's actual type (detected from content) instead of hardcoding
-          // This fixes issues where file extension doesn't match actual content type
-          const actualType = blob.type || "image/png";
-          const extension = actualType.split("/")[1] || "png";
-          const file = new File([blob], `dev-character.${extension}`, { type: actualType });
-          setPhoto(file);
-          logger.log("Auto-loaded dev character into photo", {
-            size: `${(file.size / 1024).toFixed(1)} KB`,
-            detectedType: actualType,
-          });
-        })
-        .catch((err) => {
-          logger.error("Failed to auto-load dev character file", err.message);
-          console.error("Failed to load dev character file:", err);
-        })
-        .finally(() => {
-          setDevPhotoLoading(false);
-        });
-    }
-  }, [devMode]);
-
-  const fileInputRef = useRef(null);
 
   // Voice input
   const { isListening, activeField, startListening, stopListening, isSupported } =
@@ -177,45 +144,6 @@ export default function InputScreen({ onGenerate, error }) {
 
   // Create and manage Object URL for photo preview
   // This prevents memory leaks by cleaning up old URL when photo changes
-  const photoUrl = useMemo(() => {
-    return photo ? URL.createObjectURL(photo) : null;
-  }, [photo]);
-
-  // Cleanup Object URL when photo changes or component unmounts
-  useEffect(() => {
-    return () => {
-      if (photoUrl) URL.revokeObjectURL(photoUrl);
-    };
-  }, [photoUrl]);
-
-  // Handle file selection with validation
-  const handleFileChange = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    const file = files[0];
-    
-    // Validate file size and type
-    const validation = validateFile(file);
-    if (!validation.valid) {
-      alert(validation.error);
-      e.target.value = "";
-      return;
-    }
-
-    // Take only the first photo
-    setPhoto(file);
-
-    // Clear the input so the same file can be selected again
-    e.target.value = "";
-  };
-
-  // Clear photo
-  const handleClearPhoto = () => {
-    trackClick('photo_change');
-    setPhoto(null);
-  };
-
   // Handle form submission
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -241,10 +169,10 @@ export default function InputScreen({ onGenerate, error }) {
       return;
     }
 
-    // Photo is required in both normal and dev mode
+    // Photo comes from props (already validated in PhotoUploadScreen)
     if (!photo) {
-      logger.warn("Form validation", "Photo required");
-      alert("Please upload a couple photo");
+      logger.warn("Form validation", "Photo required - should not happen");
+      alert("No photo selected. Please go back and upload a photo.");
       return;
     }
 
@@ -281,49 +209,6 @@ export default function InputScreen({ onGenerate, error }) {
 
     trackClick('generate_submit', { dev_mode: devMode });
     onGenerate(formData);
-  };
-
-  // Render photo preview section
-  const renderPhotoSection = () => {
-    if (!hasPhoto) {
-      return (
-        <div className="photo-upload-empty">
-          <button
-            type="button"
-            className="upload-btn upload-btn-large"
-            onClick={() => {
-              trackClick('photo_upload_click');
-              fileInputRef.current?.click();
-            }}
-          >
-            <span className="upload-icon">+</span>
-            <span className="upload-text">Upload Photo</span>
-            <span className="upload-text-hindi">फ़ोटो अपलोड करें</span>
-            <span className="upload-hint">Select a couple photo with both groom and bride</span>
-            <span className="upload-hint-hindi">दूल्हा-दुल्हन की फ़ोटो चुनें</span>
-          </button>
-        </div>
-      );
-    }
-
-    // Single photo - display with change option
-    return (
-      <div className="photo-single">
-        <div className="photo-card photo-card-large">
-          <div className="photo-preview">
-            <img src={photoUrl} alt="Couple photo" />
-          </div>
-        </div>
-
-        <button
-          type="button"
-          className="change-photos-btn"
-          onClick={handleClearPhoto}
-        >
-          Change Photo
-        </button>
-      </div>
-    );
   };
 
   return (
@@ -531,31 +416,16 @@ export default function InputScreen({ onGenerate, error }) {
                 </div>
               </div>
               
-              {devPhotoLoading && (
-                <div className="character-file-loading">Loading dev character...</div>
-              )}
             </div>
           </div>
         )}
 
-        {/* Photo Upload Section */}
-        <div className="form-group">
-          <label>Photo / तस्वीर</label>
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="image/*"
-            onChange={handleFileChange}
-            style={{ display: "none" }}
-          />
-          {renderPhotoSection()}
-        </div>
-
+        {/* Photo Preview with Processing Status */}
         {/* Submit Button */}
         <button
           type="submit"
           className="generate-btn"
-          disabled={devMode ? (!hasPhoto || devPhotoLoading) : (!hasPhoto || !rateLimit.canGenerate)}
+          disabled={!hasPhoto || (!devMode && !rateLimit.canGenerate)}
         >
           {devMode ? "Generate Invite (Dev Mode)" : "Generate Invite (निमंत्रण बनाएं)"}
         </button>

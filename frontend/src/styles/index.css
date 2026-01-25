@@ -574,14 +574,6 @@ html, body {
   opacity: 0.9;
 }
 
-/* Single photo display */
-.photo-single {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
 .photo-card {
   display: flex;
   flex-direction: column;
@@ -609,14 +601,6 @@ html, body {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-/* Two photos with swap button */
-.photo-dual {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
 }
 
 .photo-pair {
@@ -669,6 +653,151 @@ html, body {
 .change-photos-btn:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
+}
+
+/* Photo Upload Screen - Matches InputScreen design */
+/* Uses input-screen class as the base, minimal additional styling needed */
+
+/* ============================================================================
+   SAMPLE VIDEO SCREEN - Uses input-screen/form base
+   ============================================================================ */
+
+.sample-video-header {
+  text-align: center;
+}
+
+.sample-video-header label {
+  font-size: 20px;
+  display: block;
+}
+
+.sample-video-header .form-hint {
+  text-align: center;
+}
+
+.sample-video-player {
+  width: 80%;
+  max-width: 280px;
+  margin: 0 auto;
+  border-radius: 12px;
+  display: block;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.sample-video-value {
+  text-align: center;
+}
+
+.sample-video-value-hindi {
+  font-size: 14px;
+  color: var(--color-brown);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.sample-video-highlight {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* Form hint text */
+.form-hint {
+  font-size: 13px;
+  color: var(--color-gray);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* Status message boxes */
+.status-message-box {
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.status-message-box.status-success {
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  color: #2e7d32;
+}
+
+.status-message-box.status-error {
+  background: rgba(220, 53, 69, 0.1);
+  border: 1px solid rgba(220, 53, 69, 0.3);
+  color: var(--color-error);
+}
+
+.status-message-box .status-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Processing overlay for photo upload */
+.processing-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  z-index: 10;
+}
+
+.processing-indicator {
+  color: white;
+  text-align: center;
+  padding: 16px;
+  width: 85%;
+}
+
+.processing-indicator .spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 12px;
+}
+
+.processing-text {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+/* Upload progress bar */
+.upload-progress-bar {
+  width: 100%;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-gold), #7dc96b);
+  border-radius: 12px;
+  transition: width 0.3s ease;
+}
+
+.upload-progress-text {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
 }
 
 /* Generate button */
@@ -1060,10 +1189,6 @@ html, body {
     padding-top: 15vh;
   }
 
-  .onboarding-screen {
-    padding-top: calc(90px + var(--safe-area-top));
-  }
-
   .form {
     gap: 18px;
   }
@@ -1111,10 +1236,6 @@ html, body {
 
   .loading-screen {
     padding-top: 14vh;
-  }
-
-  .onboarding-screen {
-    padding-top: calc(85px + var(--safe-area-top));
   }
 
   .loading-text {
@@ -1194,10 +1315,6 @@ html, body {
     padding-top: 12vh;
   }
 
-  .onboarding-screen {
-    padding-top: calc(80px + var(--safe-area-top));
-  }
-
   .loading-text {
     font-size: 15px;
   }
@@ -1256,46 +1373,37 @@ html, body {
 }
 
 /* ============================================================================
-   ONBOARDING SCREEN
+   ONBOARDING SCREEN - Matches InputScreen design language
    ============================================================================ */
 
+/* Onboarding uses input-screen class, this adds specific overrides */
 .onboarding-screen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px 20px;
-  padding-top: calc(100px + var(--safe-area-top)); /* Account for app header */
-  padding-bottom: calc(24px + var(--safe-area-bottom));
-  background: linear-gradient(135deg, var(--color-cream) 0%, #FFE4B5 100%);
   text-align: center;
-  overflow: hidden;
 }
 
-.onboarding-content {
+.onboarding-screen .form {
+  align-items: center;
+}
+
+/* Onboarding step container */
+.onboarding-step {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 20px;
   width: 100%;
-  max-width: 400px;
 }
 
-/* Welcome screen (Step 1) */
-.onboarding-welcome {
-  gap: 24px;
-  padding: 40px 20px;
+/* Onboarding logo section */
+.onboarding-logo-section {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
 }
 
-/* App logo on welcome screen */
-.app-logo {
-  width: 180px;
-  height: 180px;
+.onboarding-logo {
+  width: 160px;
+  height: 160px;
   border-radius: 50%;
   object-fit: cover;
   background: var(--color-white);
@@ -1316,78 +1424,52 @@ html, body {
   }
 }
 
-.whatsapp-logo {
-  width: 28px;
-  height: 28px;
-  fill: #25D366;
-  flex-shrink: 0;
-  vertical-align: middle;
-  margin-right: 4px;
-  margin-bottom: 2px;
-}
-
-.whatsapp-line {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.onboarding-title {
-  font-size: 22px;
-  color: var(--color-primary);
-  line-height: 1.5;
-  font-weight: 600;
-}
-
-/* Photo container (Steps 2 & 3) */
-.onboarding-photo-container {
-  position: relative;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-}
-
-/* Video container (Step 4) */
-.onboarding-video-container {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-}
-
-/* Onboarding header - unified for all steps */
-.onboarding-header {
+/* Onboarding labels - centered text */
+.onboarding-label {
   font-size: 20px;
   color: var(--color-primary);
   font-weight: 600;
-  line-height: 1.4;
-  margin: 0;
+  line-height: 1.5;
+  text-align: center;
 }
 
-.onboarding-header-hindi {
-  font-size: 16px;
+.onboarding-label-sub {
+  font-size: 15px;
   font-weight: 500;
+  color: var(--color-brown);
   opacity: 0.85;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   margin-top: 4px;
 }
 
-.onboarding-photo {
+.whatsapp-logo {
+  width: 24px;
+  height: 24px;
+  fill: #25D366;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+/* Media section for photos/videos */
+.onboarding-media-section {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.onboarding-media {
   max-width: 100%;
-  max-height: 50vh;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  max-height: 45vh;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
   object-fit: contain;
 }
 
 .onboarding-video {
-  max-width: 100%;
-  max-height: 50vh;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
   background: #000;
 }
 
@@ -1395,9 +1477,9 @@ html, body {
 .sparkle-icon {
   position: absolute;
   bottom: 10%;
-  right: 5%;
-  width: 56px;
-  height: 56px;
+  right: 10%;
+  width: 48px;
+  height: 48px;
   animation: sparklePop 0.4s ease-out forwards;
   pointer-events: none;
 }
@@ -1424,216 +1506,131 @@ html, body {
   }
 }
 
-/* Back button - positioned below the fixed app header */
-.back-btn {
-  position: absolute;
-  top: calc(100px + var(--safe-area-top));
-  left: calc(20px + var(--safe-area-left));
-  width: 48px;
-  height: 48px;
-  background: rgba(255, 255, 255, 0.9);
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
+/* Back link button - inline style matching form */
+.back-link-btn {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  z-index: 10;
+  gap: 8px;
+  padding: 10px 16px;
+  background: transparent;
+  border: 1px solid #DDD;
+  border-radius: 10px;
+  color: var(--color-brown);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  align-self: flex-start;
 }
 
-.back-btn svg {
-  width: 24px;
-  height: 24px;
+.back-link-btn svg {
+  width: 18px;
+  height: 18px;
   color: var(--color-primary);
 }
 
-.back-btn:hover:not(:disabled) {
-  transform: scale(1.05);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+.back-link-btn:hover:not(:disabled) {
+  border-color: var(--color-gold);
+  background: var(--color-cream);
 }
 
-.back-btn:active:not(:disabled) {
-  transform: scale(0.95);
+.back-link-btn:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
-.back-btn:disabled {
+.back-link-btn:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.continue-btn {
-  margin-top: 32px;
-  padding: 16px 44px;
-  min-height: 52px;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  color: var(--color-white);
-  border: none;
-  border-radius: 50px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
-  box-shadow: 0 4px 15px rgba(139, 0, 0, 0.3);
-  flex-shrink: 0;
-}
-
-.continue-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(139, 0, 0, 0.4);
-}
-
-.continue-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.continue-btn:disabled {
-  opacity: 0.6;
   cursor: not-allowed;
 }
 
 /* Mobile optimizations for onboarding - 414px and below */
 @media (max-width: 414px) {
-  .back-btn {
-    top: calc(90px + var(--safe-area-top));
-    left: calc(16px + var(--safe-area-left));
+  .onboarding-logo {
+    width: 140px;
+    height: 140px;
   }
 
-  .onboarding-welcome {
-    gap: 22px;
-    padding: 32px 16px;
+  .onboarding-label {
+    font-size: 18px;
   }
 
-  .app-logo {
-    width: 160px;
-    height: 160px;
-  }
-
-  .continue-btn {
-    margin-top: 28px;
-    padding: 15px 40px;
+  .onboarding-label-sub {
+    font-size: 14px;
   }
 }
 
 /* Onboarding - 375px and below */
 @media (max-width: 375px) {
-  .back-btn {
-    top: calc(85px + var(--safe-area-top));
-    width: 44px;
-    height: 44px;
+  .onboarding-logo {
+    width: 120px;
+    height: 120px;
   }
 
-  .back-btn svg {
+  .onboarding-label {
+    font-size: 17px;
+  }
+
+  .onboarding-label-sub {
+    font-size: 13px;
+  }
+
+  .whatsapp-logo {
     width: 20px;
     height: 20px;
   }
 
-  .onboarding-welcome {
-    gap: 20px;
-    padding: 28px 16px;
+  .onboarding-media {
+    max-height: 40vh;
   }
 
-  .app-logo {
-    width: 140px;
-    height: 140px;
+  .back-link-btn {
+    padding: 8px 12px;
+    font-size: 12px;
   }
 
-  .onboarding-title {
-    font-size: 19px;
-  }
-
-  .onboarding-header {
-    font-size: 18px;
-  }
-
-  .onboarding-header-hindi {
-    font-size: 14px;
-  }
-
-  .whatsapp-logo {
-    width: 24px;
-    height: 24px;
-  }
-
-  .onboarding-photo,
-  .onboarding-video {
-    max-height: 48vh;
-  }
-
-  .continue-btn {
-    margin-top: 24px;
-    padding: 14px 36px;
-    font-size: 14px;
+  .back-link-btn svg {
+    width: 16px;
+    height: 16px;
   }
 }
 
 /* Onboarding - 320px and below */
 @media (max-width: 320px) {
-  .back-btn {
-    top: calc(80px + var(--safe-area-top));
-    left: calc(12px + var(--safe-area-left));
-    width: 40px;
-    height: 40px;
+  .onboarding-logo {
+    width: 100px;
+    height: 100px;
   }
 
-  .back-btn svg {
+  .onboarding-label {
+    font-size: 15px;
+  }
+
+  .onboarding-label-sub {
+    font-size: 12px;
+  }
+
+  .whatsapp-logo {
     width: 18px;
     height: 18px;
   }
 
-  .onboarding-welcome {
-    gap: 16px;
-    padding: 24px 12px;
-  }
-
-  .app-logo {
-    width: 120px;
-    height: 120px;
-  }
-
-  .onboarding-title {
-    font-size: 17px;
-  }
-
-  .onboarding-header {
-    font-size: 16px;
-  }
-
-  .onboarding-header-hindi {
-    font-size: 13px;
-  }
-
-  .whatsapp-logo {
-    width: 22px;
-    height: 22px;
-  }
-
-  .onboarding-photo,
-  .onboarding-video {
-    max-height: 42vh;
+  .onboarding-media {
+    max-height: 35vh;
   }
 
   .sparkle-icon {
-    width: 40px;
-    height: 40px;
-  }
-
-  .continue-btn {
-    margin-top: 20px;
-    padding: 12px 32px;
-    font-size: 13px;
+    width: 36px;
+    height: 36px;
   }
 }
 
 /* Taller screens - use more vertical space */
 @media (min-height: 800px) {
-  .onboarding-photo,
-  .onboarding-video {
-    max-height: 55vh;
+  .onboarding-media {
+    max-height: 50vh;
   }
 
-  .onboarding-welcome {
-    gap: 32px;
+  .onboarding-step {
+    gap: 28px;
   }
 }
