@@ -222,48 +222,68 @@ async function generateWithGemini(descriptions, requestId = "") {
     return attr.primary || fallback;
   };
 
-  const prompt = `Full-body illustration, front-facing Rajasthani bride and groom. Studio Ghibli style: soft painterly, warm colors, gentle outlines, realistic but slightly whimsical proportions.
+  const prompt = `(Masterpiece), Studio Ghibli art style. 
 
-CONSTRAINTS: Exactly two subjects (1 bride, 1 groom). Pure white background only. NO props, scenery, text, reflections, or duplicates.
+CRITICAL RULE: Physical traits (Skin, Face, Body, Glasses) must be EXACT matches, overriding style defaults. 
 
-BRIDE DETAILS:
-Height: ${getPrimary(bride?.height)}
-Skin: ${getPrimary(bride?.skin_color)} (precise undertone/shade match)
+
+
+[SCENE]: Full-body shot, Bride and Groom standing side-by-side, holding hands, front-facing. 
+
+[BACKGROUND]: Pure white background only. No shadows, no props.
+
+
+
+[SUBJECT 1: BRIDE - STRICT FEATURES]
+
+Skin Tone: ${getPrimary(bride?.skin_color)} (exact shade)
+
+Body Shape: ${getPrimary(bride?.body_shape)}
+
+Face Shape: ${getPrimary(bride?.face_shape)}
+
+Eye Shape: ${getPrimary(bride?.eye_size, 'medium')} ${getPrimary(bride?.eye_color)}
+
 Hair: ${getPrimary(bride?.hairstyle)}
-Eyes: ${getPrimary(bride?.eye_color)}, 
-size ${getPrimary(bride?.eye_size, 'medium, almond-shaped')}
-Body: ${getPrimary(bride?.body_shape)} (idealized natural)
-Face: ${getPrimary(bride?.face_shape)}
-Glasses: ${getPrimary(bride?.spectacles, 'none')}
 
-GROOM DETAILS:
-Height: ${getPrimary(groom?.height)}
-Skin: ${getPrimary(groom?.skin_color)} (precise undertone/shade match)
-Hair: ${getPrimary(groom?.hairstyle)} (precise style/length/texture match)
-Eyes: ${getPrimary(groom?.eye_color)}, size ${getPrimary(groom?.eye_size, 'medium, almond-shaped')}
-Body: ${getPrimary(groom?.body_shape)} (idealized natural)
+Glasses: ${getPrimary(bride?.spectacles, 'none')} (Must draw if present)
+
+Height: ${getPrimary(bride?.height)}
+
+
+
+[SUBJECT 2: GROOM - STRICT FEATURES]
+
+Skin Tone: ${getPrimary(groom?.skin_color)} (exact shade)
+
+Body Shape: ${getPrimary(groom?.body_shape)}
+
+Face Shape: ${getPrimary(groom?.face_shape)}
+
+Eye Shape: ${getPrimary(groom?.eye_size, 'medium')} ${getPrimary(groom?.eye_color)}
+
+Hair: ${getPrimary(groom?.hairstyle)}
+
 Facial Hair: ${getPrimary(groom?.facial_hair_style)}
-Face: ${getPrimary(groom?.face_shape)}
-Glasses: ${getPrimary(groom?.spectacles, 'none')}
 
-POSE & EXPRESSION: Standing side-by-side, holding hands, facing forward. Formal Indian wedding pose. Happy, warm, joyful expressions. No dynamic angles.
+Glasses: ${getPrimary(groom?.spectacles, 'none')} (Must draw if present)
 
-FIXED ATTIRE:
-Groom: Knee-length structured Sherwani (light beige/cream, subtle golden floral pattern). Teal peacock embroidery on left chest/hem. Deep magenta/maroon velvet dupatta over right shoulder (gold borders, peacock motifs). White Churidar bottoms. Golden tan Mojari shoes.
-Bride: Soft blush/pastel pink Lehenga Choli. Voluminous A-line lehenga with floral/mandala embroidery (rose pink, teal, gold). Matching blouse with floral threadwork. Light pink sheer dupatta (gold border). Traditional gold jewelry: layered necklace, oversized jhumkas, pearl maang tikka.
+Height: ${getPrimary(groom?.height)}
 
-STYLE REINFORCEMENT:  Ghibli gentle lighting. Balanced symmetry. No chibi, no hyper-realism. Full body visible.`;
 
-  logger.log(`[${requestId}] Prompt prepared`, {
-    promptLength: prompt.length,
-    brideHeight: descriptions.bride?.height?.primary,
-    brideSkinColor: descriptions.bride?.skin_color?.primary,
-    brideEyeSize: descriptions.bride?.eye_size?.primary,
-    groomHeight: descriptions.groom?.height?.primary,
-    groomSkinColor: descriptions.groom?.skin_color?.primary,
-    groomHairstyle: descriptions.groom?.hairstyle?.primary,
-    groomEyeSize: descriptions.groom?.eye_size?.primary,
-  });
+
+[ATTIRE DETAILS]
+
+Bride: Soft blush pink Lehenga Choli, A-line skirt with rose/teal/gold floral embroidery. Sheer pink dupatta with gold border. Traditional gold jewelry.
+
+Groom: Cream Jodhpuri Sherwani with teal peacock embroidery on left chest. Maroon velvet dupatta (right shoulder). White Churidar. Golden Mojari shoes.
+
+
+
+[STYLE TAGS]
+
+Cel shading, hand-drawn aesthetic, gentle lighting, warm colors, sharp focus, high definition.`;
+
   console.log("[Gemini3] Generating with prompt:", prompt.slice(0, 200) + "...");
 
   // Use retry logic for transient API errors (503, 429)
