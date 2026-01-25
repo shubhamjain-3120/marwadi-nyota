@@ -239,12 +239,7 @@ export default function PhotoUploadScreen({ onPhotoSelected, apiUrl }) {
     <div className="input-screen photo-upload-screen">
       <div className="form">
         {/* Header */}
-        <div style={{
-          backgroundColor: '#fffacd',
-          padding: '20px',
-          borderRadius: '12px',
-          marginBottom: '20px'
-        }}>
+        <div className="hero-container">
           <div className="form-group">
             <label>Photo Upload / तस्वीर अपलोड</label>
             <p className="form-hint">

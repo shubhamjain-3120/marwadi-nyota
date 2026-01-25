@@ -21,14 +21,9 @@ export default function SampleVideoScreen({ onProceed }) {
 
   return (
     <div className="input-screen">
-      <div className="form">
+      <div className="form" style={{ gap: '16px' }}>
         {/* Hero headline */}
-        <div style={{
-          backgroundColor: '#fffacd',
-          padding: '20px',
-          borderRadius: '12px',
-          marginBottom: '20px'
-        }}>
+        <div className="hero-container">
           <div className="sample-video-value-hindi">
             <label>एक फोटो अपलोड करें. मिनटों में पाएँ WhatsApp-ready वीडियो निमंत्रण.</label>
             <p className="form-hint">Upload one photo. Get a WhatsApp-ready video invite in minutes.</p>
@@ -51,6 +46,7 @@ export default function SampleVideoScreen({ onProceed }) {
         {/* CTA Button */}
         <button
           className="generate-btn"
+          style={{ marginTop: '0' }}
           onClick={handleProceed}
         >
           फोटो अपलोड करें (Upload Photo)

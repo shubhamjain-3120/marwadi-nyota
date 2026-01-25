@@ -659,6 +659,36 @@ html, body {
 /* Uses input-screen class as the base, minimal additional styling needed */
 
 /* ============================================================================
+   YELLOW HERO CONTAINER - Full width container matching header
+   ============================================================================ */
+
+.hero-container {
+  background-color: #fffacd;
+  padding: 16px 20px;
+  border-radius: 12px;
+  margin-left: -20px;
+  margin-right: -20px;
+  margin-top: 12px;
+}
+
+/* Responsive adjustments for hero container */
+@media (max-width: 414px) {
+  .hero-container {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding: 14px 16px;
+  }
+}
+
+@media (max-width: 320px) {
+  .hero-container {
+    margin-left: -12px;
+    margin-right: -12px;
+    padding: 12px 12px;
+  }
+}
+
+/* ============================================================================
    SAMPLE VIDEO SCREEN - Uses input-screen/form base
    ============================================================================ */
 
@@ -676,8 +706,8 @@ html, body {
 }
 
 .sample-video-player {
-  width: 80%;
-  max-width: 280px;
+  width: 60%;
+  max-width: 220px;
   margin: 0 auto;
   border-radius: 12px;
   display: block;

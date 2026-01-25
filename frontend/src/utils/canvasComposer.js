@@ -32,7 +32,7 @@ const LAYOUT_V4 = {
     marginXPercent: 0.08,     // 8% margin on each side
     topPercent: 0.22,         // Heads start at 22% from top (under arch)
     bottomPercent: 0.82,      // Feet end at 82% from top
-    sizeMultiplier: 2.0,      // Scale factor for character size (2.0 = 100% bigger)
+    sizeMultiplier: 1.8,      // Scale factor for character size (1.8 = 90% of original 2.0)
   },
 
   // Ground shadow ellipse
@@ -52,7 +52,7 @@ const LAYOUT_V4 = {
   // Names - Royal cursive script (Alex Brush)
   names: {
     yPercent: 0.115,          // Positioned at top with generous whitespace (1% higher)
-    fontRatio: 2.405,         // 30% larger than previous 1.85 (1.85 * 1.30 = 2.405)
+    fontRatio: 2.04425,       // 85% of original 2.405 (2.405 * 0.85 = 2.04425)
     maxWidthPercent: 0.88,
     letterSpacing: 0.02,      // Minimal tracking for cursive script
     fontFamily: "AlexBrush, 'Alex Brush', 'Great Vibes', cursive",
