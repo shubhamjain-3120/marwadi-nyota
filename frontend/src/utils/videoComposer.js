@@ -146,6 +146,32 @@ export async function preloadFFmpeg() {
 }
 
 /**
+ * Compress character image to reduce upload time
+ */
+async function compressCharacterImage(dataURL, maxWidth = 1080) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let { width, height } = img;
+
+      if (width > maxWidth) {
+        height = (height * maxWidth) / width;
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob((blob) => resolve(blob), 'image/png', 0.85);
+    };
+    img.src = dataURL;
+  });
+}
+
+/**
  * Compose video entirely on the server.
  * Used for Chrome iOS where client-side MediaRecorder/canvas.captureStream() is broken.
  *
@@ -166,16 +192,9 @@ async function serverComposeVideo({ characterImage, brideName, groomName, date, 
 
   const formData = new FormData();
 
-  // Convert base64 character image to blob
+  // Convert base64 character image to blob (compressed to reduce upload time)
   if (characterImage) {
-    const base64Data = characterImage.split(',')[1];
-    const byteCharacters = atob(base64Data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const characterBlob = new Blob([byteArray], { type: 'image/png' });
+    const characterBlob = await compressCharacterImage(characterImage);
     formData.append("characterImage", characterBlob, "character.png");
   }
 

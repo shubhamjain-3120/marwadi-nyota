@@ -158,6 +158,36 @@ html, body {
   background: linear-gradient(135deg, var(--color-cream) 0%, #FFE4B5 100%);
 }
 
+.app-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.back-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s ease;
+}
+
+.back-btn:hover {
+  background: rgba(139, 0, 0, 0.1);
+}
+
+.back-btn:active {
+  background: rgba(139, 0, 0, 0.2);
+  transform: scale(0.95);
+}
+
 .app-header-logo {
   flex-shrink: 0;
 }

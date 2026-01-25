@@ -22,7 +22,7 @@ let loadingPromise = null;
 
 // Configuration for background removal
 const REMOVAL_CONFIG = {
-  model: "medium",  // "small" | "medium" | "large" - balance speed/quality
+  model: "small",  // "small" | "medium" | "large" - balance speed/quality
   output: {
     format: "image/png",
     quality: 1.0,

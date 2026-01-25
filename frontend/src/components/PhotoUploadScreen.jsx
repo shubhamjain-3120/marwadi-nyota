@@ -278,7 +278,7 @@ export default function PhotoUploadScreen({ onPhotoSelected, apiUrl }) {
                       <div className="processing-indicator">
                         <div className="spinner" />
                         <p className="processing-text">
-                          तस्वीर अपलोड हो रही है... (Uploading...)
+                        कृपया प्रतीक्षा करें (Please wait...)
                         </p>
                         <div className="upload-progress-bar">
                           <div

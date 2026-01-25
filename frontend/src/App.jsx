@@ -14,6 +14,13 @@ const ResultScreen = lazy(() => import("./components/ResultScreen"));
 
 const logger = createDevLogger("App");
 
+// Back arrow icon
+const BackArrowIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 12H5M12 19l-7-7 7-7"/>
+  </svg>
+);
+
 // Speaker icons for music toggle
 const SpeakerOnIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -667,6 +674,22 @@ export default function App() {
     setError(null);
   }, []);
 
+  // Handle back button navigation
+  const handleBack = useCallback(() => {
+    logger.log("Back button clicked", { currentScreen: screen });
+
+    if (screen === SCREENS.PHOTO_UPLOAD) {
+      // Go back to sample video
+      setScreen(SCREENS.SAMPLE_VIDEO);
+    } else if (screen === SCREENS.INPUT) {
+      // Go back to photo upload
+      setScreen(SCREENS.PHOTO_UPLOAD);
+    } else if (screen === SCREENS.RESULT) {
+      // Go back to input form
+      setScreen(SCREENS.INPUT);
+    }
+  }, [screen]);
+
   // Loading fallback for lazy-loaded components
   const LoadingFallback = () => (
     <div className="loading-fallback">
@@ -683,21 +706,34 @@ export default function App() {
         </div>
       )}
       
-      {/* App Header - Logo and Sound Button aligned at top */}
+      {/* App Header - Back button, Logo and Sound Button aligned at top */}
       <header className="app-header">
-        <div className="app-header-logo">
-          <img 
-            src="/assets/app-logo.png" 
-            alt="मारवाड़ी विवाह" 
-            className="app-header-logo-img"
-          />
+        <div className="app-header-left">
+          {/* Show back button on all screens except sample video and loading */}
+          {screen !== SCREENS.SAMPLE_VIDEO && screen !== SCREENS.LOADING && (
+            <button
+              className="back-btn"
+              onClick={handleBack}
+              aria-label="Go back"
+              title="Go back"
+            >
+              <BackArrowIcon />
+            </button>
+          )}
+          <div className="app-header-logo">
+            <img
+              src="/assets/app-logo.png"
+              alt="मारवाड़ी विवाह"
+              className="app-header-logo-img"
+            />
+          </div>
         </div>
         <div className="app-header-title">
           <h1>मारवाड़ी विवाह</h1>
           <p>मारवाड़ी कूकू पत्रिका बनाएं</p>
         </div>
         <div className="app-header-actions">
-          <button 
+          <button
             className="music-toggle-btn"
             onClick={toggleMusic}
             aria-label={isMusicPlaying ? "Mute background music" : "Play background music"}

@@ -1,25 +1,4 @@
-import "dotenv/config";
-import express from "express";
-import cors from "cors";
-import multer from "multer";
-import { rateLimit } from "express-rate-limit";
-import { generateWeddingCharacters, analyzePhoto } from "./gemini.js";
-import { createDevLogger, isDevMode } from "./devLogger.js";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
-import path from "path";
-import os from "os";
-import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const execAsync = promisify(exec);
-
-const logger = createDevLogger("Server");
-
-const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Validate file is actually an image by checking magic bytes
@@ -489,7 +468,7 @@ app.post(
       const venueY = Math.round(height * 0.915);
 
       // Font sizes (scaled for 540p - 75% of 720p)
-      const namesFontSize = Math.round(54 * 1.5);
+      const namesFontSize = Math.round(54 * 1.3);
       const textFontSize = Math.round(54 * 0.75);
       // Character animation timing (fade-in starts at third second)
       const CHARACTER_FADE_START = 3;
@@ -532,7 +511,7 @@ app.post(
         ? `-i "${backgroundVideoPath}" -loop 1 -i "${characterPath}"`
         : `-i "${backgroundVideoPath}"`;
 
-      const ffmpegCmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map 0:a? -c:v libx264 -preset ultrafast -tune fastdecode -threads 2 -crf 28 -maxrate 800k -bufsize 1600k -c:a aac -b:a 96k -movflags +faststart -pix_fmt yuv420p -shortest "${outputPath}"`;
+      const ffmpegCmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map 0:a? -c:v libx264 -preset ultrafast -threads 4 -crf 32 -maxrate 800k -bufsize 1600k -c:a aac -b:a 96k -movflags +faststart -pix_fmt yuv420p -shortest "${outputPath}"`;
 
       logger.log(`[${requestId}] Running FFmpeg composition`, {
         command: ffmpegCmd.slice(0, 200) + "...",
