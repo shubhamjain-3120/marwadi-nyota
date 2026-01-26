@@ -333,6 +333,23 @@ Cel shading, hand-drawn aesthetic, gentle lighting, warm colors, sharp focus, hi
   };
 }
 
+/**
+ * Generate AI wedding portrait from couple photo
+ *
+ * Two-step process:
+ * 1. Analyze photo with OpenAI GPT-4o to extract physical features (skin tone, hair, body shape, etc.)
+ * 2. Generate Studio Ghibli-style portrait with Gemini 2.5 Flash Image based on descriptions
+ *
+ * @param {Object} photo - Multer file object containing photo buffer and mimetype
+ * @param {Buffer} photo.buffer - Photo file buffer
+ * @param {string} photo.mimetype - Photo MIME type (image/jpeg, image/png, etc.)
+ * @param {string} [requestId=""] - Unique request ID for logging/tracking
+ * @returns {Promise<Object>} - Generation result with image data and dummy evaluation
+ * @returns {string} result.imageData - Base64-encoded generated image
+ * @returns {string} result.mimeType - Image MIME type (image/png)
+ * @returns {Object} result.evaluation - Dummy evaluation object (always passed)
+ * @throws {Error} - If photo analysis or image generation fails
+ */
 export async function generateWeddingCharacters(photo, requestId = "") {
   const totalStartTime = performance.now();
 

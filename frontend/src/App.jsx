@@ -59,7 +59,14 @@ const INITIAL_RETRY_DELAY_MS = 1000;
 
 /**
  * Fetch with exponential backoff retry logic
- * Retries on network errors and 5xx server errors
+ * Retries on network errors and 5xx server errors (NOT client errors 4xx)
+ *
+ * @param {string} url - URL to fetch
+ * @param {RequestInit} options - Fetch options (method, body, headers, etc.)
+ * @param {number} [retries=MAX_RETRIES] - Max retry attempts (default: 3)
+ * @param {AbortSignal} [signal=null] - AbortSignal for cancellation support
+ * @returns {Promise<Response>} - Fetch response if successful
+ * @throws {Error} - Throws after all retries exhausted or if aborted
  */
 async function fetchWithRetry(url, options, retries = MAX_RETRIES, signal = null) {
   let lastError;
@@ -260,6 +267,25 @@ export default function App() {
     });
   };
 
+  /**
+   * Core generation pipeline for wedding invites
+   *
+   * Orchestrates the entire invite generation workflow:
+   * 1. Get/wait for AI-generated character image (from processing service or API)
+   * 2. Remove background from character (if not already done)
+   * 3. Compose video with character overlay and text (server-side)
+   *
+   * @param {Object} generationFormData - Form data with names, date, venue, photo
+   * @param {string} generationFormData.brideName - Bride's name
+   * @param {string} generationFormData.groomName - Groom's name
+   * @param {string} generationFormData.date - Wedding date (formatted)
+   * @param {string} generationFormData.venue - Wedding venue
+   * @param {File} generationFormData.photo - Uploaded couple photo
+   * @param {boolean} generationFormData.devMode - Skip API calls if true
+   * @param {File} [generationFormData.characterFile] - Dev mode: local character file
+   * @param {boolean} [generationFormData.skipBackgroundRemoval] - Dev mode: skip bg removal
+   * @param {boolean} [generationFormData.skipVideoGeneration] - Dev mode: skip video composition
+   */
   const handleGenerate = useCallback(async (generationFormData) => {
     // Create new AbortController for this generation
     abortControllerRef.current = new AbortController();
