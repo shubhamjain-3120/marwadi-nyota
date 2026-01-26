@@ -1,11 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import { createDevLogger } from "./devLogger.js";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const logger = createDevLogger("Gemini");
 
