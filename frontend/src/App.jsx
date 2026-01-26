@@ -316,26 +316,26 @@ export default function App() {
     });
   };
 
-  const handleGenerate = useCallback(async (data) => {
+  const handleGenerate = useCallback(async (generationFormData) => {
     // Create new AbortController for this generation
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
 
-    setFormData(data);
+    setFormData(generationFormData);
     setScreen(SCREENS.LOADING);
     setLoadingCompleted(false);
     setError(null);
 
     logger.log("Generation started", {
-      devMode: data.devMode,
-      brideName: data.brideName,
-      groomName: data.groomName,
-      hasPhoto: !!data.photo,
-      hasCharacterFile: !!data.characterFile,
-      skipExtraction: data.skipExtraction,
-      skipImageGeneration: data.skipImageGeneration,
-      skipBackgroundRemoval: data.skipBackgroundRemoval,
-      skipVideoGeneration: data.skipVideoGeneration,
+      devMode: generationFormData.devMode,
+      brideName: generationFormData.brideName,
+      groomName: generationFormData.groomName,
+      hasPhoto: !!generationFormData.photo,
+      hasCharacterFile: !!generationFormData.characterFile,
+      skipExtraction: generationFormData.skipExtraction,
+      skipImageGeneration: generationFormData.skipImageGeneration,
+      skipBackgroundRemoval: generationFormData.skipBackgroundRemoval,
+      skipVideoGeneration: generationFormData.skipVideoGeneration,
       videoComposition: "server-side", // Always use server for consistent quality
     });
 
@@ -345,7 +345,7 @@ export default function App() {
       // Step 1: Get character image
       // Priority: 1) Background processing service (if ready), 2) Dev mode local file, 3) API call
       const service = processingServiceRef.current;
-      const shouldSkipAPI = data.devMode && (data.skipExtraction || data.skipImageGeneration);
+      const shouldSkipAPI = generationFormData.devMode && (generationFormData.skipExtraction || generationFormData.skipImageGeneration);
 
       // Check if photo is fully processed (extraction + generation + evaluation + bg removal)
       const isPhotoProcessed = service?.isPhotoFullyProcessed?.() || false;
@@ -416,12 +416,12 @@ export default function App() {
           state: serviceState,
         });
         console.log("[App] Using completed processing result");
-      } else if (shouldSkipAPI && data.characterFile) {
+      } else if (shouldSkipAPI && generationFormData.characterFile) {
         // Dev mode: use local character file
         logger.log("Step 1: Using local character file (dev mode - skipping API)", {
-          fileName: data.characterFile.name,
-          fileSize: `${(data.characterFile.size / 1024).toFixed(1)} KB`,
-          fileType: data.characterFile.type,
+          fileName: generationFormData.characterFile.name,
+          fileSize: `${(generationFormData.characterFile.size / 1024).toFixed(1)} KB`,
+          fileType: generationFormData.characterFile.type,
         });
         console.log("[App] Dev mode enabled - using local character file");
 
@@ -429,7 +429,7 @@ export default function App() {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result);
           reader.onerror = () => reject(new Error("Failed to read character file"));
-          reader.readAsDataURL(data.characterFile);
+          reader.readAsDataURL(generationFormData.characterFile);
         });
 
         logger.log("Step 1 complete: Character file loaded as data URL", {
@@ -445,12 +445,12 @@ export default function App() {
         }
 
         const apiFormData = new FormData();
-        apiFormData.append("photo", data.photo);
+        apiFormData.append("photo", generationFormData.photo);
 
         logger.log("Step 1: Calling backend API (fallback)", {
-          photoName: data.photo.name,
-          photoSize: `${(data.photo.size / 1024).toFixed(1)} KB`,
-          photoType: data.photo.type,
+          photoName: generationFormData.photo.name,
+          photoSize: `${(generationFormData.photo.size / 1024).toFixed(1)} KB`,
+          photoType: generationFormData.photo.type,
         });
         console.log("[App] Calling backend API...");
 
@@ -494,7 +494,7 @@ export default function App() {
       if (usedProcessingService) {
         logger.log("Step 2: Skipping background removal (already done by processing service)");
         console.log("[App] Background already removed by processing service");
-      } else if (data.skipBackgroundRemoval) {
+      } else if (generationFormData.skipBackgroundRemoval) {
         logger.log("Step 2: Skipping background removal (dev mode toggle)");
         console.log("[App] Skipping background removal (dev mode)");
       } else {
@@ -519,8 +519,8 @@ export default function App() {
 
       // Step 3: Video composition (conditionally based on toggle)
       let videoBlob;
-      
-      if (data.skipVideoGeneration) {
+
+      if (generationFormData.skipVideoGeneration) {
         logger.log("Step 3: Skipping video generation (dev mode toggle)");
         console.log("[App] Skipping video generation (dev mode)");
 
@@ -534,10 +534,10 @@ export default function App() {
         });
       } else {
         logger.log("Step 3: Starting video composition (server-side)", {
-          brideName: data.brideName,
-          groomName: data.groomName,
-          date: data.date,
-          venue: data.venue,
+          brideName: generationFormData.brideName,
+          groomName: generationFormData.groomName,
+          date: generationFormData.date,
+          venue: generationFormData.venue,
           characterImageLength: characterImage?.length,
         });
         console.log("[App] Composing video invite (server-side)...");
@@ -547,10 +547,10 @@ export default function App() {
         let lastLoggedProgress = 0;
         videoBlob = await composeVideoInvite({
           characterImage,
-          brideName: data.brideName,
-          groomName: data.groomName,
-          date: data.date,
-          venue: data.venue,
+          brideName: generationFormData.brideName,
+          groomName: generationFormData.groomName,
+          date: generationFormData.date,
+          venue: generationFormData.venue,
           onProgress: (progress) => {
             // Only log at key milestones (every 20%) to reduce noise
             if (progress >= lastLoggedProgress + 20 || progress === 100) {
@@ -572,7 +572,7 @@ export default function App() {
       setFinalInvite(videoBlob);
 
       // Increment rate limit counter (only for non-dev mode)
-      if (!data.devMode) {
+      if (!generationFormData.devMode) {
         const newLimit = incrementGenerationCount();
         logger.log("Rate limit updated", {
           count: newLimit.count,
