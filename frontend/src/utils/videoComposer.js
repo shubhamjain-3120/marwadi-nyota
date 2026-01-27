@@ -616,6 +616,11 @@ function logAnimationProgress(elementName, opacity) {
 // UTILITY FUNCTIONS
 // ============================================================================
 
+/**
+ * Loads an image from URL or data URL with CORS support and timing metrics
+ * @param {string} src - Image source (URL or data URL)
+ * @returns {Promise<HTMLImageElement>} Promise that resolves to loaded image
+ */
 function loadImage(src) {
   const startTime = performance.now();
   const isDataUrl = src.startsWith("data:");
@@ -642,6 +647,11 @@ function loadImage(src) {
   });
 }
 
+/**
+ * Loads a video element from URL with CORS support
+ * @param {string} src - Video source URL
+ * @returns {Promise<HTMLVideoElement>} Promise that resolves to loaded video element
+ */
 function loadVideo(src) {
   const startTime = performance.now();
   logger.log("Loading video", { source: src });
@@ -671,10 +681,15 @@ function loadVideo(src) {
   });
 }
 
+/**
+ * Loads all required fonts for video canvas rendering
+ * Includes AlexBrush, Playfair Display, and Inter fonts
+ * @returns {Promise<void>} Promise that resolves when fonts are loaded
+ */
 async function loadFonts() {
   const startTime = performance.now();
-  logger.log("Loading fonts", { 
-    fonts: ["AlexBrush", "PlayfairDisplay", "Inter", "InterMedium"] 
+  logger.log("Loading fonts", {
+    fonts: ["AlexBrush", "PlayfairDisplay", "Inter", "InterMedium"]
   });
   
   const alexBrush = new FontFace("AlexBrush", "url(/fonts/AlexBrush-Regular.ttf)");
@@ -703,6 +718,11 @@ async function loadFonts() {
   }
 }
 
+/**
+ * Capitalizes the first letter of a string and lowercases the rest
+ * @param {string} str - String to capitalize
+ * @returns {string} Capitalized string
+ */
 function capitalizeFirst(str) {
   if (!str) return str;
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
@@ -725,6 +745,11 @@ function calculateOpacity(currentTime, startTime, endTime) {
 // CHARACTER PLACEMENT
 // ============================================================================
 
+/**
+ * Calculates the bounds for character image placement on canvas
+ * @param {HTMLImageElement} characterImg - Character image element
+ * @returns {{x: number, y: number, width: number, height: number}} Calculated bounds
+ */
 function calculateCharacterBounds(characterImg) {
   const targetTop = CANVAS_HEIGHT * LAYOUT_V4.character.topPercent;
   const targetBottom = CANVAS_HEIGHT * LAYOUT_V4.character.bottomPercent;
