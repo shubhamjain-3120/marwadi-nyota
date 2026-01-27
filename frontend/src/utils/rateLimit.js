@@ -18,10 +18,10 @@ export function getRateLimitState() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      const data = JSON.parse(stored);
-      
+      const storedRateLimitData = JSON.parse(stored);
+
       // Check if window has expired
-      if (Date.now() > data.resetAt) {
+      if (Date.now() > storedRateLimitData.resetAt) {
         // Reset the counter
         const newState = {
           count: 0,
@@ -35,12 +35,12 @@ export function getRateLimitState() {
           canGenerate: true,
         };
       }
-      
+
       return {
-        count: data.count,
-        remaining: Math.max(0, MAX_GENERATIONS - data.count),
-        resetAt: data.resetAt,
-        canGenerate: data.count < MAX_GENERATIONS,
+        count: storedRateLimitData.count,
+        remaining: Math.max(0, MAX_GENERATIONS - storedRateLimitData.count),
+        resetAt: storedRateLimitData.resetAt,
+        canGenerate: storedRateLimitData.count < MAX_GENERATIONS,
       };
     }
   } catch (e) {
