@@ -7,9 +7,10 @@
  */
 
 /**
- * Track a page/screen view
+ * Track a page/screen view in Google Analytics 4
  * @param {string} pageName - Name of the page/screen being viewed
- * @param {Object} params - Additional parameters to send with the event
+ * @param {Object} [params={}] - Additional parameters to send with the event
+ * @returns {void}
  */
 export function trackPageView(pageName, params = {}) {
   if (typeof window !== 'undefined' && typeof window.gtag === 'function') {
@@ -21,9 +22,10 @@ export function trackPageView(pageName, params = {}) {
 }
 
 /**
- * Track a button click or user action
+ * Track a button click or user action in Google Analytics 4
  * @param {string} eventName - Name of the event (e.g., 'video_download', 'form_submit')
- * @param {Object} params - Additional parameters to send with the event
+ * @param {Object} [params={}] - Additional parameters to send with the event
+ * @returns {void}
  */
 export function trackClick(eventName, params = {}) {
   if (typeof window !== 'undefined' && typeof window.gtag === 'function') {
