@@ -31,7 +31,7 @@ const REMOVAL_CONFIG = {
   progress: (key, current, total) => {
     if (key === "compute:inference") {
       const percent = Math.round((current / total) * 100);
-      console.log(`[BgRemoval] Processing: ${percent}%`);
+      logger.log(`Processing: ${percent}%`);
     }
   },
 };
@@ -51,14 +51,12 @@ async function loadLibrary() {
   }
   
   logger.log("Loading library dynamically...");
-  console.log("[BgRemoval] Loading library dynamically...");
   const startTime = performance.now();
-  
+
   loadingPromise = import("@imgly/background-removal").then((module) => {
     removeBackgroundFn = module.removeBackground;
     const duration = performance.now() - startTime;
     logger.log("Library loaded", { duration: `${duration.toFixed(0)}ms` });
-    console.log("[BgRemoval] Library loaded");
     return removeBackgroundFn;
   }).catch((err) => {
     loadingPromise = null;
@@ -107,7 +105,6 @@ export async function removeImageBackground(imageDataURL) {
   logger.log("Starting background removal", {
     inputLength: imageDataURL?.length,
   });
-  console.log("[BgRemoval] Starting background removal...");
   const startTime = performance.now();
 
   try {
@@ -122,7 +119,6 @@ export async function removeImageBackground(imageDataURL) {
     logger.log("Step 2 complete: Input prepared", {
       inputSize: `${(inputBlob.size / 1024).toFixed(1)} KB`,
     });
-    console.log(`[BgRemoval] Input size: ${(inputBlob.size / 1024).toFixed(1)} KB`);
 
     // Remove background
     logger.log("Step 3: Calling removeBackground() - this may take a while...");
@@ -146,13 +142,10 @@ export async function removeImageBackground(imageDataURL) {
       inputSize: `${(inputBlob.size / 1024).toFixed(1)} KB`,
       outputSize: `${(resultBlob.size / 1024).toFixed(1)} KB`,
     });
-    console.log(`[BgRemoval] Complete in ${duration.toFixed(0)}ms`);
-    console.log(`[BgRemoval] Output size: ${(resultBlob.size / 1024).toFixed(1)} KB`);
 
     return resultDataURL;
   } catch (error) {
     logger.error("Background removal failed", error);
-    console.error("[BgRemoval] Error:", error);
     throw new Error(`Background removal failed: ${error.message}`);
   }
 }
@@ -163,13 +156,13 @@ export async function removeImageBackground(imageDataURL) {
  * Now uses dynamic import to avoid blocking initial page load.
  */
 export async function preloadBackgroundRemovalModel() {
-  console.log("[BgRemoval] Preloading model...");
+  logger.log("Preloading model...");
   const startTime = performance.now();
 
   try {
     // First, dynamically load the library
     const removeBackground = await loadLibrary();
-    
+
     // Create a tiny dummy image to trigger model loading
     const canvas = document.createElement("canvas");
     canvas.width = 10;
@@ -191,9 +184,9 @@ export async function preloadBackgroundRemovalModel() {
     });
 
     const duration = performance.now() - startTime;
-    console.log(`[BgRemoval] Model preloaded in ${duration.toFixed(0)}ms`);
+    logger.log(`Model preloaded in ${duration.toFixed(0)}ms`);
   } catch (error) {
-    console.warn("[BgRemoval] Preload failed (will retry on first use):", error.message);
+    logger.warn("Preload failed (will retry on first use)", error);
   }
 }
 
