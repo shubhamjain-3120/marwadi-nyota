@@ -5,7 +5,7 @@ import multer from "multer";
 import { rateLimit } from "express-rate-limit";
 import { generateWeddingCharacters, analyzePhoto } from "./gemini.js";
 import { createDevLogger, isDevMode } from "./devLogger.js";
-import { exec } from "child_process";
+import { exec, execSync } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
@@ -441,6 +441,40 @@ app.post(
       const GreatVibes = path.join(fontsDir, "GreatVibes-Regular.ttf");
       const playfairFont = path.join(fontsDir, "PlayfairDisplay.ttf");
 
+      // LOG: Verify all paths resolve correctly
+      logger.log(`[${requestId}] Path resolution`, {
+        __dirname,
+        backgroundVideoPath,
+        fontsDir,
+        GreatVibes,
+        playfairFont,
+      });
+
+      // LOG: Check if files exist before FFmpeg
+      try {
+        await fs.access(backgroundVideoPath);
+        const bgStats = await fs.stat(backgroundVideoPath);
+        logger.log(`[${requestId}] Background video found: ${(bgStats.size / 1024 / 1024).toFixed(2)} MB`);
+      } catch (err) {
+        logger.error(`[${requestId}] Background video NOT FOUND at ${backgroundVideoPath}`);
+        return res.status(500).json({
+          success: false,
+          error: `Background video not found at path: ${backgroundVideoPath}`,
+        });
+      }
+
+      try {
+        await fs.access(GreatVibes);
+        await fs.access(playfairFont);
+        logger.log(`[${requestId}] Fonts found`);
+      } catch (err) {
+        logger.error(`[${requestId}] Fonts NOT FOUND`, { GreatVibes, playfairFont });
+        return res.status(500).json({
+          success: false,
+          error: `Fonts not found. Checked: ${GreatVibes}, ${playfairFont}`,
+        });
+      }
+
       logger.log(`[${requestId}] Writing character image to temp file`, { tempDir });
 
       // Write character image to temp file
@@ -517,12 +551,29 @@ app.post(
       const compositionStart = performance.now();
 
       try {
+        logger.log(`[${requestId}] Executing FFmpeg with 5min timeout`, {
+          command: ffmpegCmd.slice(0, 300),
+        });
+
         await execAsync(ffmpegCmd, { timeout: 300000 }); // 5 minute timeout for slower servers
+
+        const compositionTime = performance.now() - compositionStart;
+        logger.log(`[${requestId}] FFmpeg execution completed`, {
+          duration: `${compositionTime.toFixed(0)}ms`,
+          durationSeconds: `${(compositionTime / 1000).toFixed(1)}s`,
+        });
       } catch (ffmpegError) {
-        logger.error(`[${requestId}] FFmpeg composition failed`, {
+        const failTime = performance.now() - compositionStart;
+        logger.error(`[${requestId}] FFmpeg composition failed after ${failTime.toFixed(0)}ms`, {
           error: ffmpegError.message,
-          stderr: ffmpegError.stderr,
-          stdout: ffmpegError.stdout,
+          errorCode: ffmpegError.code,
+          signal: ffmpegError.signal,
+          killed: ffmpegError.killed,
+          stderr: ffmpegError.stderr?.slice(-1000), // Last 1000 chars
+          stdout: ffmpegError.stdout?.slice(-500),
+          wasTimeout: ffmpegError.killed && ffmpegError.signal === 'SIGTERM',
+          wasOOM: ffmpegError.code === 137 || ffmpegError.signal === 'SIGKILL',
+          failedAfterMs: failTime.toFixed(0),
         });
 
         // Cleanup temp files
@@ -530,7 +581,7 @@ app.post(
 
         return res.status(500).json({
           success: false,
-          error: `Video composition failed: ${ffmpegError.stderr?.slice(0, 200) || ffmpegError.message}`,
+          error: `Video composition failed: ${ffmpegError.stderr?.slice(-200) || ffmpegError.message}`,
         });
       }
 
@@ -586,13 +637,41 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`[Server] Running on http://localhost:${PORT}`);
   console.log(`[Server] Dev Mode: ${isDevMode() ? "ENABLED" : "disabled"}`);
   console.log(`[Server] OpenAI API Key: ${process.env.OPENAI_API_KEY ? "Set" : "NOT SET"}`);
   console.log(`[Server] Gemini API Key: ${process.env.GEMINI_API_KEY ? "Set" : "NOT SET"}`);
-  
+
   if (isDevMode()) {
     console.log(`[Server] Dev logging is enabled - detailed logs will be shown`);
+  }
+
+  // Check frontend assets availability
+  const assetPaths = {
+    backgroundVideo: path.join(__dirname, "../frontend/public/assets/background.mp4"),
+    bgAudio: path.join(__dirname, "../frontend/public/assets/bg_audio.mp3"),
+    devCharacter: path.join(__dirname, "../frontend/public/assets/dev-character.png"),
+    greatVibesFont: path.join(__dirname, "../frontend/public/fonts/GreatVibes-Regular.ttf"),
+    playfairFont: path.join(__dirname, "../frontend/public/fonts/PlayfairDisplay.ttf"),
+  };
+
+  console.log('[Server] Checking frontend assets:');
+  for (const [name, filePath] of Object.entries(assetPaths)) {
+    try {
+      await fs.access(filePath);
+      const stats = await fs.stat(filePath);
+      console.log(`  ✓ ${name}: ${filePath} (${(stats.size / 1024).toFixed(1)} KB)`);
+    } catch {
+      console.log(`  ✗ ${name} MISSING: ${filePath}`);
+    }
+  }
+
+  // Check FFmpeg availability
+  try {
+    const ffmpegVersion = execSync('ffmpeg -version', { encoding: 'utf-8' });
+    console.log('[Server] FFmpeg:', ffmpegVersion.split('\n')[0]);
+  } catch (err) {
+    console.error('[Server] ✗ FFmpeg NOT FOUND:', err.message);
   }
 });

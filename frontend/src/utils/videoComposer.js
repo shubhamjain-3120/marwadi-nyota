@@ -163,6 +163,8 @@ async function compressCharacterImage(dataURL, maxWidth = 1080) {
 async function serverComposeVideo({ characterImage, brideName, groomName, date, venue, onProgress }) {
   const startTime = performance.now();
   logger.log("Starting server-side video composition", {
+    API_URL: API_URL || '(empty - using relative path)',
+    fullURL: `${API_URL}/api/compose-video`,
     characterImageLength: characterImage?.length,
     brideName,
     groomName,

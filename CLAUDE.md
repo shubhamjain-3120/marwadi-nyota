@@ -47,8 +47,8 @@ Run backend (terminal 1) and frontend (terminal 2) simultaneously. Frontend prox
 **Frontend:**
 - `App.jsx` - Main orchestration, screen routing, generation flow (handleGenerate method)
 - `components/InputScreen.jsx` - Form collection, photo upload, validation
-- `utils/canvasComposer.js` - Static canvas composition (1080×1920px, typography system)
-- `utils/videoComposer.js` - FFmpeg.wasm client-side or server fallback
+- `utils/videoComposer.js` - Server-side video composition with overlays
+- `utils/composerShared.js` - Shared typography and color utilities
 
 ### Video Composition Strategy
 - **Client-side**: FFmpeg.wasm when SharedArrayBuffer available
