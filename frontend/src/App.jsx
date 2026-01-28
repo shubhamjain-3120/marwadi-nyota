@@ -458,7 +458,15 @@ export default function App() {
         const startBgRemoval = performance.now();
 
         try {
-          characterImage = await removeImageBackground(characterImage);
+          // Add 60 second timeout for background removal (WASM can hang on large images)
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Background removal timeout (60s)')), 60000)
+          );
+
+          characterImage = await Promise.race([
+            removeImageBackground(characterImage),
+            timeoutPromise
+          ]);
 
           logger.log("Step 2 complete: Background removal successful", {
             outputLength: characterImage?.length,

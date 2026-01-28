@@ -95,14 +95,6 @@ export function incrementGenerationCount() {
 }
 
 /**
- * Check if user can generate (without incrementing)
- * @returns {boolean}
- */
-export function canGenerate() {
-  return getRateLimitState().canGenerate;
-}
-
-/**
  * Format reset time as human-readable string
  * @param {number} resetAt - Unix timestamp in ms
  * @returns {string}

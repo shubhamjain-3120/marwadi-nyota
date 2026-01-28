@@ -11,6 +11,15 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile, toBlobURL } from "@ffmpeg/util";
 import { createDevLogger } from "./devLogger";
+import {
+  SHARED_COLORS,
+  capitalizeFirst,
+  formatDateDisplay,
+  createPremiumGoldGradient,
+  createCopperBrownGradient,
+  calculateFontSize,
+  drawTextWithTracking,
+} from "./composerShared";
 
 const logger = createDevLogger("VideoComposer");
 
@@ -26,7 +35,7 @@ let ffmpegLoaded = false;
  * Chrome iOS uses WebKit but has broken MediaRecorder/canvas.captureStream()
  * that causes video composition to hang or lag severely.
  */
-export function isChromeIOS() {
+function isChromeIOS() {
   const ua = navigator.userAgent;
   return /CriOS/.test(ua);
 }
@@ -39,7 +48,7 @@ export function isChromeIOS() {
  * - MediaRecorder + canvas.captureStream() is broken/laggy
  * - Video composition hangs during the recording phase
  */
-export function isFFmpegSupported() {
+function isFFmpegSupported() {
   const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
   const chromeIOS = isChromeIOS();
   const supported = hasSharedArrayBuffer && !chromeIOS;
@@ -113,35 +122,6 @@ async function loadFFmpeg(onProgress) {
   } catch (error) {
     logger.error("FFmpeg load failed", error);
     throw error;
-  }
-}
-
-/**
- * Preload FFmpeg.wasm in the background.
- * Call this early (e.g., when user enters the input form) to reduce latency
- * when video generation starts.
- *
- * Note: Only preloads if FFmpeg is supported (SharedArrayBuffer available).
- */
-export async function preloadFFmpeg() {
-  // Don't try to preload if FFmpeg is not supported
-  if (!isFFmpegSupported()) {
-    logger.log("FFmpeg preload skipped - SharedArrayBuffer not available (will use server fallback)");
-    return;
-  }
-
-  if (ffmpegLoaded && ffmpeg) {
-    logger.log("FFmpeg already loaded, skipping preload");
-    return;
-  }
-
-  logger.log("Preloading FFmpeg.wasm in background...");
-  try {
-    await loadFFmpeg();
-    logger.log("FFmpeg preload complete");
-  } catch (error) {
-    // Silently fail - will retry when actually needed
-    logger.warn("FFmpeg preload failed (will retry on use)", error.message);
   }
 }
 
@@ -558,18 +538,8 @@ const LAYOUT_V4 = {
   baseFontSize: 54,
 };
 
-// Color palette (same as canvasComposer.js)
-const COLORS = {
-  goldPrimary: "#D4A853",
-  goldHighlight: "#F8E8B0",
-  goldDeep: "#A67C3D",
-  goldMid: "#E6C066",
-  goldRich: "#C9942B",
-  goldBright: "#F0D78C",
-  copperBrown: "#B87333",
-  copperBrownLight: "#CD8544",
-  copperBrownDark: "#8B5A2B",
-};
+// Use shared color palette
+const COLORS = SHARED_COLORS;
 
 // Animation timing for staggered fade-in (in seconds)
 // Total animation sequence: 7 seconds
@@ -711,11 +681,6 @@ async function loadFonts() {
   }
 }
 
-function capitalizeFirst(str) {
-  if (!str) return str;
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-}
-
 /**
  * Calculate opacity for fade-in animation based on current time
  * @param {number} currentTime - Current video time in seconds
@@ -793,86 +758,6 @@ function drawGroundShadow(ctx, characterBounds) {
   ctx.restore();
 }
 
-function createPremiumGoldGradient(ctx, x, y, width, height) {
-  const gradient = ctx.createLinearGradient(
-    x - width / 2,
-    y - height * 0.3,
-    x + width / 2,
-    y + height * 0.3
-  );
-  
-  gradient.addColorStop(0, COLORS.goldRich);
-  gradient.addColorStop(0.15, COLORS.goldPrimary);
-  gradient.addColorStop(0.35, COLORS.goldMid);
-  gradient.addColorStop(0.5, COLORS.goldBright);
-  gradient.addColorStop(0.65, COLORS.goldMid);
-  gradient.addColorStop(0.85, COLORS.goldPrimary);
-  gradient.addColorStop(1, COLORS.goldRich);
-  
-  return gradient;
-}
-
-function createCopperBrownGradient(ctx, x, y, width, height) {
-  const gradient = ctx.createLinearGradient(
-    x - width / 2,
-    y - height * 0.3,
-    x + width / 2,
-    y + height * 0.3
-  );
-  
-  gradient.addColorStop(0, COLORS.copperBrownDark);
-  gradient.addColorStop(0.2, COLORS.copperBrown);
-  gradient.addColorStop(0.4, COLORS.copperBrownLight);
-  gradient.addColorStop(0.6, COLORS.copperBrownLight);
-  gradient.addColorStop(0.8, COLORS.copperBrown);
-  gradient.addColorStop(1, COLORS.copperBrownDark);
-  
-  return gradient;
-}
-
-function calculateFontSize(ctx, text, maxWidth, idealSize, minSize, fontFamily, letterSpacing = 0) {
-  let fontSize = idealSize;
-
-  while (fontSize > minSize) {
-    ctx.font = `${fontSize}px ${fontFamily}`;
-    const metrics = ctx.measureText(text);
-    const spacingWidth = (text.length - 1) * (fontSize * letterSpacing);
-    const totalWidth = metrics.width + spacingWidth;
-    
-    if (totalWidth <= maxWidth) {
-      return fontSize;
-    }
-    fontSize -= 2;
-  }
-
-  return minSize;
-}
-
-function drawTextWithTracking(ctx, text, x, y, letterSpacing) {
-  if (letterSpacing <= 0) {
-    ctx.fillText(text, x, y);
-    return;
-  }
-
-  const chars = text.split('');
-  const fontSize = parseFloat(ctx.font);
-  const spacing = fontSize * letterSpacing;
-  
-  let totalWidth = 0;
-  chars.forEach(char => {
-    totalWidth += ctx.measureText(char).width;
-  });
-  totalWidth += (chars.length - 1) * spacing;
-  
-  let currentX = x - totalWidth / 2;
-
-  chars.forEach((char) => {
-    const charWidth = ctx.measureText(char).width;
-    ctx.fillText(char, currentX + charWidth / 2, y);
-    currentX += charWidth + spacing;
-  });
-}
-
 function drawNamesText(ctx, brideName, groomName, opacity = 1) {
   if (opacity <= 0) return;
   
@@ -924,7 +809,7 @@ function drawNamesText(ctx, brideName, groomName, opacity = 1) {
   let currentX = (CANVAS_WIDTH - totalTextWidth) / 2;
   
   // Draw bride's name in warm gold gradient
-  const goldGradient = createPremiumGoldGradient(ctx, currentX + brideWidth / 2, y, brideWidth, fontSize * 1.5);
+  const goldGradient = createPremiumGoldGradient(ctx, currentX + brideWidth / 2, y, brideWidth, fontSize * 1.5, COLORS);
   
   ctx.shadowColor = "rgba(166, 124, 61, 0.35)";
   ctx.shadowBlur = 3;
@@ -936,7 +821,7 @@ function drawNamesText(ctx, brideName, groomName, opacity = 1) {
   currentX += brideWidth;
   
   // Draw ampersand in copper
-  const copperGradient = createCopperBrownGradient(ctx, currentX + ampersandWidth / 2, y, ampersandWidth, fontSize * 1.5);
+  const copperGradient = createCopperBrownGradient(ctx, currentX + ampersandWidth / 2, y, ampersandWidth, fontSize * 1.5, COLORS);
   
   ctx.shadowColor = "rgba(139, 90, 43, 0.35)";
   ctx.fillStyle = copperGradient;
@@ -944,7 +829,7 @@ function drawNamesText(ctx, brideName, groomName, opacity = 1) {
   currentX += ampersandWidth;
   
   // Draw groom's name in warm gold gradient
-  const goldGradient2 = createPremiumGoldGradient(ctx, currentX + groomWidth / 2, y, groomWidth, fontSize * 1.5);
+  const goldGradient2 = createPremiumGoldGradient(ctx, currentX + groomWidth / 2, y, groomWidth, fontSize * 1.5, COLORS);
   
   ctx.shadowColor = "rgba(166, 124, 61, 0.35)";
   ctx.fillStyle = goldGradient2;
@@ -952,25 +837,6 @@ function drawNamesText(ctx, brideName, groomName, opacity = 1) {
   
   // Restore context (resets globalAlpha and shadow)
   ctx.restore();
-}
-
-function formatDateDisplay(dateStr) {
-  try {
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) {
-      return dateStr;
-    }
-    const months = [
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December"
-    ];
-    const month = months[date.getMonth()];
-    const day = date.getDate();
-    const year = date.getFullYear();
-    return `${day} ${month} ${year}`;
-  } catch {
-    return dateStr;
-  }
 }
 
 function drawDateText(ctx, dateStr, opacity = 1) {
@@ -1181,11 +1047,4 @@ export async function composeVideoInvite({
     });
     throw error;
   }
-}
-
-/**
- * Convert video blob to data URL for preview
- */
-export function videoBlobToDataURL(blob) {
-  return URL.createObjectURL(blob);
 }

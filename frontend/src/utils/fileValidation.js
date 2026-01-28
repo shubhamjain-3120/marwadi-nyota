@@ -2,9 +2,9 @@
  * File validation utilities for image uploads
  */
 
-// File size and type constraints
-export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+// File size and type constraints (internal only)
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 /**
  * Validates an uploaded file against size and type constraints

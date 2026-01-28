@@ -172,37 +172,6 @@ export async function loadCachedImage(imageId) {
 }
 
 /**
- * Clear cache for a specific image
- */
-export async function clearImageCache(imageId) {
-  try {
-    // Remove metadata
-    clearMetadataFromLocalStorage(imageId);
-
-    // Try to remove from IndexedDB
-    if (isIndexedDBSupported()) {
-      try {
-        const db = await openDatabase();
-        const transaction = db.transaction([STORE_NAME], "readwrite");
-        const store = transaction.objectStore(STORE_NAME);
-        store.delete(imageId);
-
-        await new Promise((resolve, reject) => {
-          transaction.oncomplete = resolve;
-          transaction.onerror = () => reject(transaction.error);
-        });
-
-        logger.log("Cleared cache for image", { image_id: imageId });
-      } catch (error) {
-        logger.warn("Failed to clear IndexedDB cache", error.message);
-      }
-    }
-  } catch (error) {
-    logger.error("Failed to clear image cache", error.message);
-  }
-}
-
-/**
  * Save metadata to localStorage (for quick checks)
  */
 function saveMetadataToLocalStorage(imageId, processingVersion, timestamp) {
