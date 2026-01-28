@@ -2,14 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { trackPageView } from "../utils/analytics";
 
 /**
- * Loading Screen with New Progress Bar Logic
- *
- * Progress stages:
- * - 0-90%: Increase 1% every n seconds where n is random between 1-3 seconds
- * - 90-98%: Increase 1% every 5 seconds
- * - 98-100%: Wait for actual process completion, then jump to 100% immediately
+ * Trivia messages shown during loading to entertain users.
+ * Each message has Marwadi and English versions.
  */
-
 const TRIVIA_MESSAGES = [
   {
     mrw: "असली बजट टेस्ट वेन्यू कोनी, मिठाई रो काउंटर है।",
@@ -45,6 +40,22 @@ const TRIVIA_MESSAGES = [
   }
 ];
 
+/**
+ * Loading Screen with Progress Bar and Rotating Trivia
+ *
+ * Displays a loading screen with a progress bar and rotating Marwadi wedding
+ * trivia messages to entertain users during the generation process.
+ *
+ * Progress stages:
+ * - 0-90%: Increase 1% every n seconds where n is random between 1-3 seconds
+ * - 90-98%: Increase 1% every 5 seconds
+ * - 98-100%: Wait for actual process completion, then jump to 100% immediately
+ *
+ * @param {Object} props - Component props
+ * @param {boolean} [props.completed=false] - Whether the generation process is complete
+ * @param {Function} [props.onCancel] - Optional callback fired when user clicks "Cancel" button
+ * @returns {JSX.Element} Loading screen with progress bar and trivia messages
+ */
 export default function LoadingScreen({ completed = false, onCancel }) {
   const [progress, setProgress] = useState(0);
   const [triviaIndex, setTriviaIndex] = useState(0);
