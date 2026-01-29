@@ -3,6 +3,3 @@ node_modules
 .DS_Store
 *.log
 npm-debug.log*
-
-# Frontend assets copied for Docker build (no longer needed - deploy from root)
-frontend/

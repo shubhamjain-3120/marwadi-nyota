@@ -1,14 +1,15 @@
 /**
  * Image Processing Service
- * 
+ *
  * Background processing pipeline that runs asynchronously after photo upload
  * State machine: uploaded → extracting → generating → evaluating → bg_removed → ready
- * 
+ *
  * Features:
  * - Timeout + retry logic for each step
  * - Fail graceful with fallback
  * - Progress tracking
  * - Cancellation support
+ * - Reliable background removal with server fallback
  */
 
 import { createDevLogger } from "./devLogger";
@@ -16,6 +17,9 @@ import { removeImageBackground } from "./backgroundRemoval";
 import { generateImageId, saveCachedImage, loadCachedImage, isCacheValid } from "./cacheStorage";
 
 const logger = createDevLogger("ImageProcessing");
+
+// API URL - uses environment variable in production, empty string (relative) in dev
+const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
 // Processing version for cache validation
 export const PROCESSING_VERSION = "1.0";
@@ -25,7 +29,7 @@ const TIMEOUTS = {
   extraction: 60000,      // 60s - Image extraction & face detection
   generation: 300000,     // 5m - Image generation/enhancement
   evaluation: 60000,      // 60s - Quality scoring
-  bg_removing: 120000,    // 2m - Background removal (key matches stepName)
+  bg_removing: 180000,    // 3m - Background removal with server fallback (key matches stepName)
 };
 
 // Retry configuration
@@ -478,23 +482,17 @@ export class ImageProcessingService {
 
   /**
    * Remove background from image
+   * Now uses improved background removal with server fallback - no silent failures
    */
   async _removeBackground() {
     this.progress = 70;
     this._notify();
 
-    try {
-      this.processedImage = await removeImageBackground(this.processedImage);
-      this.progress = 80;
-      this._notify();
-      return this.processedImage;
-    } catch (error) {
-      // Fallback: use original image without background removal
-      logger.warn("Background removal failed, using original image", error.message);
-      this.progress = 80;
-      this._notify();
-      return this.processedImage;
-    }
+    // Pass API_URL for server-side fallback
+    this.processedImage = await removeImageBackground(this.processedImage, API_URL);
+    this.progress = 80;
+    this._notify();
+    return this.processedImage;
   }
 
   /**

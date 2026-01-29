@@ -11,6 +11,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { fileURLToPath } from "url";
+import { removeBackground } from "@imgly/background-removal-node";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,11 +57,9 @@ function isValidWebMBuffer(buffer) {
 
 function validatePhotoUpload(photo, requestId) {
   if (!photo) {
-    logger.warn(`[${requestId}] Validation failed`, "No photo provided");
     return { valid: false, status: 400, error: "Couple photo is required" };
   }
   if (!isValidImageBuffer(photo.buffer)) {
-    logger.warn(`[${requestId}] Validation failed`, "Invalid image content");
     return { valid: false, status: 400, error: "Invalid image file. Please upload a valid JPEG, PNG, GIF, or WebP image." };
   }
   return { valid: true };
@@ -137,17 +136,19 @@ app.use(cors({
       return callback(null, true);
     }
 
-    // Log rejected origins for debugging
-    logger.warn(`CORS blocked origin: ${origin}`);
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true
 }));
 app.use(express.json({ limit: '1mb' }));
 
+// Serve frontend assets (for local development with backend/frontend/ folder)
+// In production Docker, this serves assets copied by Dockerfile
+app.use('/assets', express.static(path.join(__dirname, 'frontend', 'public', 'assets')));
+app.use('/fonts', express.static(path.join(__dirname, 'frontend', 'public', 'fonts')));
+
 // Health check
 app.get("/api/health", (req, res) => {
-  logger.log("Health check requested");
   res.json({ status: "ok", devMode: isDevMode() });
 });
 
@@ -157,13 +158,6 @@ app.post(
   upload.single("photo"),
   async (req, res) => {
     const requestId = Date.now().toString(36);
-    const startTime = performance.now();
-    
-    logger.log(`[${requestId}] Extract endpoint called`, {
-      hasFile: !!req.file,
-      fileSize: req.file ? `${(req.file.size / 1024).toFixed(1)} KB` : null,
-      fileMimeType: req.file?.mimetype,
-    });
 
     try {
       const photo = req.file;
@@ -171,34 +165,89 @@ app.post(
       const validation = validatePhotoUpload(photo, requestId);
       if (!validation.valid) return res.status(validation.status).json({ success: false, error: validation.error });
 
-      logger.log(`[${requestId}] [EXTRACTION] Step 1: Photo received, preparing for extraction`, {
-        photoSize: `${(photo.size / 1024).toFixed(1)} KB`,
-        photoMimeType: photo.mimetype,
-      });
-
-      logger.log(`[${requestId}] [EXTRACTION] Step 2: Calling analyzePhoto function...`);
-
-      // Extract features using photo analysis (extraction only)
       const descriptions = await analyzePhoto(photo, requestId);
-
-      const totalDuration = performance.now() - startTime;
-      logger.log(`[${requestId}] [EXTRACTION] Step 3: Extraction complete - sending response to frontend`, {
-        totalDuration: `${totalDuration.toFixed(0)}ms`,
-        hasBride: !!descriptions.bride,
-        hasGroom: !!descriptions.groom,
-      });
 
       res.json({
         success: true,
         descriptions,
       });
     } catch (error) {
-      const totalDuration = performance.now() - startTime;
-      logger.error(`[${requestId}] Extraction failed after ${totalDuration.toFixed(0)}ms`, error);
+      logger.error(`[${requestId}] Extraction failed`, error);
 
       res.status(500).json({
         success: false,
         error: "Photo extraction failed. Please try again.",
+      });
+    }
+  }
+);
+
+// Background removal endpoint - server-side fallback for when client-side fails
+app.post(
+  "/api/remove-background",
+  upload.single("image"),
+  async (req, res) => {
+    const requestId = Date.now().toString(36);
+
+    try {
+      const image = req.file;
+
+      if (!image) {
+        return res.status(400).json({
+          success: false,
+          error: "Image file is required",
+        });
+      }
+
+      const validation = validatePhotoUpload(image, requestId);
+      if (!validation.valid) {
+        return res.status(validation.status).json({
+          success: false,
+          error: validation.error
+        });
+      }
+
+      logger.log(`[${requestId}] Starting server-side background removal`, {
+        imageSize: `${(image.buffer.length / 1024).toFixed(1)} KB`,
+        mimeType: image.mimetype,
+      });
+
+      const startTime = Date.now();
+
+      // Remove background using @imgly/background-removal-node
+      const resultBlob = await removeBackground(image.buffer, {
+        model: "small",
+        output: {
+          format: "image/png",
+          quality: 1.0,
+        },
+      });
+
+      const duration = Date.now() - startTime;
+
+      // Convert Blob to Buffer
+      const resultBuffer = Buffer.from(await resultBlob.arrayBuffer());
+
+      logger.log(`[${requestId}] Background removal complete`, {
+        duration: `${duration}ms`,
+        inputSize: `${(image.buffer.length / 1024).toFixed(1)} KB`,
+        outputSize: `${(resultBuffer.length / 1024).toFixed(1)} KB`,
+      });
+
+      // Return as base64 data URL
+      const base64 = resultBuffer.toString("base64");
+      const dataURL = `data:image/png;base64,${base64}`;
+
+      res.json({
+        success: true,
+        imageDataURL: dataURL,
+      });
+    } catch (error) {
+      logger.error(`[${requestId}] Background removal failed`, error);
+
+      res.status(500).json({
+        success: false,
+        error: "Background removal failed. Please try again.",
       });
     }
   }
@@ -211,13 +260,6 @@ app.post(
   upload.single("photo"),
   async (req, res) => {
     const requestId = Date.now().toString(36);
-    const startTime = performance.now();
-    
-    logger.log(`[${requestId}] Generate endpoint called`, {
-      hasFile: !!req.file,
-      fileSize: req.file ? `${(req.file.size / 1024).toFixed(1)} KB` : null,
-      fileMimeType: req.file?.mimetype,
-    });
 
     try {
       const photo = req.file;
@@ -225,21 +267,7 @@ app.post(
       const validation = validatePhotoUpload(photo, requestId);
       if (!validation.valid) return res.status(validation.status).json({ success: false, error: validation.error });
 
-      logger.log(`[${requestId}] Step 1: Starting generation pipeline`, {
-        photoSize: `${(photo.size / 1024).toFixed(1)} KB`,
-        photoMimeType: photo.mimetype,
-      });
-
-      // Generate characters using Gemini (extracts features then generates)
       const result = await generateWeddingCharacters(photo, requestId);
-
-      const totalDuration = performance.now() - startTime;
-      logger.log(`[${requestId}] Generation complete`, {
-        totalDuration: `${totalDuration.toFixed(0)}ms`,
-        imageSizeKB: `${(result.imageData.length * 0.75 / 1024).toFixed(1)} KB`,
-        evaluationScore: result.evaluation?.score,
-        evaluationPassed: result.evaluation?.passed,
-      });
 
       res.json({
         success: true,
@@ -252,10 +280,8 @@ app.post(
         } : null
       });
     } catch (error) {
-      const totalDuration = performance.now() - startTime;
-      logger.error(`[${requestId}] Generation failed after ${totalDuration.toFixed(0)}ms`, error);
+      logger.error(`[${requestId}] Generation failed`, error);
 
-      // After max retries, return error to client
       res.status(500).json({
         success: false,
         error: "Generation failed. Please try again.",
@@ -271,50 +297,31 @@ app.post(
   videoUpload.single("video"),
   async (req, res) => {
     const requestId = Date.now().toString(36);
-    const startTime = performance.now();
-
-    logger.log(`[${requestId}] Video conversion endpoint called`, {
-      hasFile: !!req.file,
-      fileSize: req.file ? `${(req.file.size / 1024 / 1024).toFixed(2)} MB` : null,
-      fileMimeType: req.file?.mimetype,
-    });
 
     try {
       const video = req.file;
 
-      // Validate input
       if (!video) {
-        logger.warn(`[${requestId}] Validation failed`, "No video provided");
         return res.status(400).json({
           success: false,
           error: "WebM video file is required",
         });
       }
 
-      // Validate file content (magic bytes)
       if (!isValidWebMBuffer(video.buffer)) {
-        logger.warn(`[${requestId}] Validation failed`, "Invalid WebM file content");
         return res.status(400).json({
           success: false,
           error: "Invalid WebM file. Please upload a valid WebM video.",
         });
       }
 
-      // Create temp directory and files
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "video-convert-"));
       const inputPath = path.join(tempDir, "input.webm");
       const outputPath = path.join(tempDir, "output.mp4");
 
-      logger.log(`[${requestId}] Writing WebM to temp file`, {
-        tempDir,
-        inputSize: `${(video.buffer.length / 1024 / 1024).toFixed(2)} MB`,
-      });
-
-      // Write WebM to temp file
       await fs.writeFile(inputPath, video.buffer);
 
-      // H.264 + AAC, ultrafast preset, web-optimized
-        const ffmpegCmd = `ffmpeg -y -i "${inputPath}" \
+      const ffmpegCmd = `ffmpeg -y -i "${inputPath}" \
         -c:v libx264 \
         -preset veryfast \
         -crf 36 \
@@ -326,50 +333,20 @@ app.post(
         -movflags +faststart \
         "${outputPath}"`;
 
-
-      logger.log(`[${requestId}] Running FFmpeg conversion`, { command: ffmpegCmd });
-      const conversionStart = performance.now();
-
       try {
-        await execAsync(ffmpegCmd, { timeout: 120000 }); // 2 minute timeout
+        await execAsync(ffmpegCmd, { timeout: 120000 });
       } catch (ffmpegError) {
         logger.error(`[${requestId}] FFmpeg conversion failed`, ffmpegError);
-
-        // Cleanup temp files
         await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-
         return res.status(500).json({
           success: false,
           error: "Video conversion failed. FFmpeg error.",
         });
       }
 
-      const conversionTime = performance.now() - conversionStart;
-      logger.log(`[${requestId}] FFmpeg conversion complete`, {
-        duration: `${conversionTime.toFixed(0)}ms`,
-      });
-
-      // Read output MP4
       const mp4Buffer = await fs.readFile(outputPath);
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
-      logger.log(`[${requestId}] MP4 output ready`, {
-        outputSize: `${(mp4Buffer.length / 1024 / 1024).toFixed(2)} MB`,
-        compressionRatio: `${((1 - mp4Buffer.length / video.buffer.length) * 100).toFixed(1)}%`,
-      });
-
-      // Cleanup temp files
-      await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => {
-        logger.warn(`[${requestId}] Failed to cleanup temp dir`, err.message);
-      });
-
-      const totalDuration = performance.now() - startTime;
-      logger.log(`[${requestId}] Video conversion complete`, {
-        totalDuration: `${totalDuration.toFixed(0)}ms`,
-        inputSize: `${(video.buffer.length / 1024 / 1024).toFixed(2)} MB`,
-        outputSize: `${(mp4Buffer.length / 1024 / 1024).toFixed(2)} MB`,
-      });
-
-      // Send MP4 as binary response
       res.set({
         "Content-Type": "video/mp4",
         "Content-Length": mp4Buffer.length,
@@ -378,8 +355,7 @@ app.post(
       res.send(mp4Buffer);
 
     } catch (error) {
-      const totalDuration = performance.now() - startTime;
-      logger.error(`[${requestId}] Video conversion failed after ${totalDuration.toFixed(0)}ms`, error);
+      logger.error(`[${requestId}] Video conversion failed`, error);
 
       res.status(500).json({
         success: false,
@@ -404,57 +380,29 @@ app.post(
   composeUpload.single("characterImage"),
   async (req, res) => {
     const requestId = Date.now().toString(36);
-    const startTime = performance.now();
-
-    logger.log(`[${requestId}] Video composition endpoint called`, {
-      hasCharacterImage: !!req.file,
-      characterImageSize: req.file ? `${(req.file.size / 1024).toFixed(1)} KB` : null,
-      brideName: req.body.brideName,
-      groomName: req.body.groomName,
-      date: req.body.date,
-      venue: req.body.venue,
-    });
 
     try {
       const { brideName, groomName, date, venue } = req.body;
       const characterImage = req.file;
 
-      // Validate required fields
       if (!brideName || !groomName || !date || !venue) {
-        logger.warn(`[${requestId}] Validation failed`, "Missing required fields");
         return res.status(400).json({
           success: false,
           error: "Missing required fields: brideName, groomName, date, venue",
         });
       }
 
-      // Create temp directory
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "video-compose-"));
       const characterPath = path.join(tempDir, "character.png");
       const outputPath = path.join(tempDir, "output.mp4");
 
-      // Path to background video (in frontend public assets)
       const backgroundVideoPath = path.join(__dirname, "../frontend/public/assets/background.mp4");
-
-      // Path to fonts
       const fontsDir = path.join(__dirname, "../frontend/public/fonts");
       const GreatVibes = path.join(fontsDir, "GreatVibes-Regular.ttf");
       const playfairFont = path.join(fontsDir, "PlayfairDisplay.ttf");
 
-      // LOG: Verify all paths resolve correctly
-      logger.log(`[${requestId}] Path resolution`, {
-        __dirname,
-        backgroundVideoPath,
-        fontsDir,
-        GreatVibes,
-        playfairFont,
-      });
-
-      // LOG: Check if files exist before FFmpeg
       try {
         await fs.access(backgroundVideoPath);
-        const bgStats = await fs.stat(backgroundVideoPath);
-        logger.log(`[${requestId}] Background video found: ${(bgStats.size / 1024 / 1024).toFixed(2)} MB`);
       } catch (err) {
         logger.error(`[${requestId}] Background video NOT FOUND at ${backgroundVideoPath}`);
         return res.status(500).json({
@@ -466,7 +414,6 @@ app.post(
       try {
         await fs.access(GreatVibes);
         await fs.access(playfairFont);
-        logger.log(`[${requestId}] Fonts found`);
       } catch (err) {
         logger.error(`[${requestId}] Fonts NOT FOUND`, { GreatVibes, playfairFont });
         return res.status(500).json({
@@ -475,9 +422,6 @@ app.post(
         });
       }
 
-      logger.log(`[${requestId}] Writing character image to temp file`, { tempDir });
-
-      // Write character image to temp file
       if (characterImage) {
         await fs.writeFile(characterPath, characterImage.buffer);
       }
@@ -544,39 +488,14 @@ app.post(
 
       const ffmpegCmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map 0:a? -c:v libx264 -preset ultrafast -threads 4 -crf 32 -maxrate 800k -bufsize 1600k -c:a aac -b:a 96k -pix_fmt yuv420p -movflags +faststart -shortest "${outputPath}"`;
 
-      logger.log(`[${requestId}] Running FFmpeg composition`, {
-        command: ffmpegCmd.slice(0, 200) + "...",
-      });
-
-      const compositionStart = performance.now();
-
       try {
-        logger.log(`[${requestId}] Executing FFmpeg with 5min timeout`, {
-          command: ffmpegCmd.slice(0, 300),
-        });
-
-        await execAsync(ffmpegCmd, { timeout: 300000 }); // 5 minute timeout for slower servers
-
-        const compositionTime = performance.now() - compositionStart;
-        logger.log(`[${requestId}] FFmpeg execution completed`, {
-          duration: `${compositionTime.toFixed(0)}ms`,
-          durationSeconds: `${(compositionTime / 1000).toFixed(1)}s`,
-        });
+        await execAsync(ffmpegCmd, { timeout: 300000 });
       } catch (ffmpegError) {
-        const failTime = performance.now() - compositionStart;
-        logger.error(`[${requestId}] FFmpeg composition failed after ${failTime.toFixed(0)}ms`, {
+        logger.error(`[${requestId}] FFmpeg composition failed`, {
           error: ffmpegError.message,
-          errorCode: ffmpegError.code,
-          signal: ffmpegError.signal,
-          killed: ffmpegError.killed,
-          stderr: ffmpegError.stderr?.slice(-1000), // Last 1000 chars
-          stdout: ffmpegError.stdout?.slice(-500),
-          wasTimeout: ffmpegError.killed && ffmpegError.signal === 'SIGTERM',
-          wasOOM: ffmpegError.code === 137 || ffmpegError.signal === 'SIGKILL',
-          failedAfterMs: failTime.toFixed(0),
+          stderr: ffmpegError.stderr?.slice(-500),
         });
 
-        // Cleanup temp files
         await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
         return res.status(500).json({
@@ -585,30 +504,9 @@ app.post(
         });
       }
 
-      const compositionTime = performance.now() - compositionStart;
-      logger.log(`[${requestId}] FFmpeg composition complete`, {
-        duration: `${compositionTime.toFixed(0)}ms`,
-      });
-
-      // Read output MP4
       const mp4Buffer = await fs.readFile(outputPath);
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
-      logger.log(`[${requestId}] MP4 output ready`, {
-        outputSize: `${(mp4Buffer.length / 1024 / 1024).toFixed(2)} MB`,
-      });
-
-      // Cleanup temp files
-      await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => {
-        logger.warn(`[${requestId}] Failed to cleanup temp dir`, err.message);
-      });
-
-      const totalDuration = performance.now() - startTime;
-      logger.log(`[${requestId}] Video composition complete`, {
-        totalDuration: `${totalDuration.toFixed(0)}ms`,
-        outputSize: `${(mp4Buffer.length / 1024 / 1024).toFixed(2)} MB`,
-      });
-
-      // Send MP4 as binary response
       res.set({
         "Content-Type": "video/mp4",
         "Content-Length": mp4Buffer.length,
@@ -617,8 +515,7 @@ app.post(
       res.send(mp4Buffer);
 
     } catch (error) {
-      const totalDuration = performance.now() - startTime;
-      logger.error(`[${requestId}] Video composition failed after ${totalDuration.toFixed(0)}ms`, error);
+      logger.error(`[${requestId}] Video composition failed`, error);
 
       res.status(500).json({
         success: false,
@@ -637,41 +534,29 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, async () => {
-  console.log(`[Server] Running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`[Server] Running on http://0.0.0.0:${PORT}`);
   console.log(`[Server] Dev Mode: ${isDevMode() ? "ENABLED" : "disabled"}`);
-  console.log(`[Server] OpenAI API Key: ${process.env.OPENAI_API_KEY ? "Set" : "NOT SET"}`);
   console.log(`[Server] Gemini API Key: ${process.env.GEMINI_API_KEY ? "Set" : "NOT SET"}`);
 
-  if (isDevMode()) {
-    console.log(`[Server] Dev logging is enabled - detailed logs will be shown`);
-  }
-
-  // Check frontend assets availability
+  // Check critical assets
   const assetPaths = {
     backgroundVideo: path.join(__dirname, "../frontend/public/assets/background.mp4"),
-    bgAudio: path.join(__dirname, "../frontend/public/assets/bg_audio.mp3"),
-    devCharacter: path.join(__dirname, "../frontend/public/assets/dev-character.png"),
     greatVibesFont: path.join(__dirname, "../frontend/public/fonts/GreatVibes-Regular.ttf"),
     playfairFont: path.join(__dirname, "../frontend/public/fonts/PlayfairDisplay.ttf"),
   };
 
-  console.log('[Server] Checking frontend assets:');
   for (const [name, filePath] of Object.entries(assetPaths)) {
     try {
       await fs.access(filePath);
-      const stats = await fs.stat(filePath);
-      console.log(`  ✓ ${name}: ${filePath} (${(stats.size / 1024).toFixed(1)} KB)`);
     } catch {
       console.log(`  ✗ ${name} MISSING: ${filePath}`);
     }
   }
 
-  // Check FFmpeg availability
   try {
-    const ffmpegVersion = execSync('ffmpeg -version', { encoding: 'utf-8' });
-    console.log('[Server] FFmpeg:', ffmpegVersion.split('\n')[0]);
+    execSync('ffmpeg -version', { encoding: 'utf-8', stdio: 'ignore' });
   } catch (err) {
-    console.error('[Server] ✗ FFmpeg NOT FOUND:', err.message);
+    console.error('[Server] ✗ FFmpeg NOT FOUND');
   }
 });

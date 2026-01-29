@@ -457,25 +457,13 @@ export default function App() {
         logger.log("Step 2: Starting background removal");
         const startBgRemoval = performance.now();
 
-        try {
-          // Add 60 second timeout for background removal (WASM can hang on large images)
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Background removal timeout (60s)')), 60000)
-          );
+        // Use improved background removal with server fallback - no silent failures
+        characterImage = await removeImageBackground(characterImage, API_URL);
 
-          characterImage = await Promise.race([
-            removeImageBackground(characterImage),
-            timeoutPromise
-          ]);
-
-          logger.log("Step 2 complete: Background removal successful", {
-            outputLength: characterImage?.length,
-            duration: `${(performance.now() - startBgRemoval).toFixed(0)}ms`,
-          });
-        } catch (bgError) {
-          // If background removal fails, use the original image
-          logger.warn("Step 2", `Background removal failed, using original: ${bgError.message}`);
-        }
+        logger.log("Step 2 complete: Background removal successful", {
+          outputLength: characterImage?.length,
+          duration: `${(performance.now() - startBgRemoval).toFixed(0)}ms`,
+        });
       }
 
       // Step 3: Video composition (conditionally based on toggle)
