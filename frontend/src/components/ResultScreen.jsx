@@ -142,7 +142,7 @@ export default function ResultScreen({ inviteVideo, brideName, groomName, onRese
         logger.log("Using Web Share API");
         await navigator.share({
           title: `${groomName} & ${brideName} Wedding Invite`,
-          text: `You're invited to the wedding of ${groomName} & ${brideName}!`,
+          text: `We're getting married! 🎉🌺\nPlease join us in making this a joyful celebration.`,
           files: [file],
         });
         logger.log("Share completed successfully");
@@ -151,7 +151,7 @@ export default function ResultScreen({ inviteVideo, brideName, groomName, onRese
         trackClick(isImage ? 'image_share' : 'video_share', { share_method: 'whatsapp_fallback' });
         logger.log("Falling back to WhatsApp share");
         const text = encodeURIComponent(
-          `You're invited to the wedding of ${groomName} & ${brideName}!`
+          `We're getting married! 🎉🌺\nPlease join us in making this a joyful celebration.`
         );
         window.open(`https://wa.me/?text=${text}`, "_blank");
         alert(`Download the ${isImage ? 'image' : 'video'} and attach it to your WhatsApp message`);
@@ -161,7 +161,7 @@ export default function ResultScreen({ inviteVideo, brideName, groomName, onRese
         logger.error("Share failed", err);
         // Fallback to WhatsApp
         const text = encodeURIComponent(
-          `You're invited to the wedding of ${groomName} & ${brideName}!`
+          `We're getting married! 🎉🌺\nPlease join us in making this a joyful celebration.`
         );
         window.open(`https://wa.me/?text=${text}`, "_blank");
       } else {

@@ -1,7 +1,7 @@
 FROM node:18-slim
 
-# Install FFmpeg (required for server-side video composition)
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# Install FFmpeg and librsvg2-bin (required for server-side video composition)
+RUN apt-get update && apt-get install -y ffmpeg librsvg2-bin && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
