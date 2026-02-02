@@ -497,7 +497,9 @@ export default function App() {
           brideName: generationFormData.brideName,
           groomName: generationFormData.groomName,
           date: generationFormData.date,
-          venue: generationFormData.venue,
+          time: generationFormData.time,
+          brideParents: generationFormData.brideParentName,
+          groomParents: generationFormData.groomParentName,
           onProgress: (progress) => {
             // Only log at key milestones (every 20%) to reduce noise
             if (progress >= lastLoggedProgress + 20 || progress === 100) {

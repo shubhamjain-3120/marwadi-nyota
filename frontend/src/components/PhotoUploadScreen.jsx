@@ -271,7 +271,7 @@ export default function PhotoUploadScreen({ onPhotoSelected, apiUrl }) {
             <span>✓ तस्वीर अपलोड हो गई! (Photo uploaded!)</span>
           ) : (
             <div className="form-group">
-              <label>Photo Upload / तस्वीर अपलोड</label>
+              <label>तस्वीर अपलोड (Photo Upload)/ </label>
               <p className="form-hint">
                 एक अच्छी और स्पष्ट तस्वीर चुनें (Choose a clear, good quality photo)
               </p>

@@ -382,24 +382,27 @@ app.post(
     const requestId = Date.now().toString(36);
 
     try {
-      const { brideName, groomName, date, venue } = req.body;
+      const { brideName, groomName, date, time, brideParents, groomParents } = req.body;
       const characterImage = req.file;
 
-      if (!brideName || !groomName || !date || !venue) {
+      if (!brideName || !groomName || !date || !time || !brideParents || !groomParents) {
         return res.status(400).json({
           success: false,
-          error: "Missing required fields: brideName, groomName, date, venue",
+          error: "Missing required fields: brideName, groomName, date, time, brideParents, groomParents",
         });
       }
 
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "video-compose-"));
       const characterPath = path.join(tempDir, "character.png");
+      const dividerPngPath = path.join(tempDir, "divider.png");
       const outputPath = path.join(tempDir, "output.mp4");
 
       const backgroundVideoPath = path.join(__dirname, "../frontend/public/assets/background.mp4");
+      const dividerSvgPath = path.join(__dirname, "../frontend/public/assets/divider.svg");
       const fontsDir = path.join(__dirname, "../frontend/public/fonts");
-      const GreatVibes = path.join(fontsDir, "GreatVibes-Regular.ttf");
-      const playfairFont = path.join(fontsDir, "PlayfairDisplay.ttf");
+      const playfairRegular = path.join(fontsDir, "PlayfairDisplay.ttf");
+      const playfairBold = path.join(fontsDir, "PlayfairDisplay-Bold.ttf");
+      const playfairItalic = path.join(fontsDir, "PlayfairDisplay-Italic.ttf");
 
       try {
         await fs.access(backgroundVideoPath);
@@ -412,13 +415,15 @@ app.post(
       }
 
       try {
-        await fs.access(GreatVibes);
-        await fs.access(playfairFont);
+        await fs.access(playfairRegular);
+        await fs.access(playfairBold);
+        await fs.access(playfairItalic);
+        await fs.access(dividerSvgPath);
       } catch (err) {
-        logger.error(`[${requestId}] Fonts NOT FOUND`, { GreatVibes, playfairFont });
+        logger.error(`[${requestId}] Required assets NOT FOUND`, err);
         return res.status(500).json({
           success: false,
-          error: `Fonts not found. Checked: ${GreatVibes}, ${playfairFont}`,
+          error: `Required assets not found. Please check fonts and divider.svg`,
         });
       }
 
@@ -426,67 +431,137 @@ app.post(
         await fs.writeFile(characterPath, characterImage.buffer);
       }
 
-      // Video dimensions (reduced for lower memory usage and faster encoding on constrained servers)
-      const width = 540;
-      const height = 960;
+      // Convert divider.svg to PNG for overlay (width=400px for good quality)
+      try {
+        await execAsync(`convert -background none -density 300 -resize 400x "${dividerSvgPath}" "${dividerPngPath}"`);
+      } catch (convertError) {
+        logger.error(`[${requestId}] SVG to PNG conversion failed, trying rsvg-convert`, convertError);
+        try {
+          await execAsync(`rsvg-convert -w 400 "${dividerSvgPath}" -o "${dividerPngPath}"`);
+        } catch (rsvgError) {
+          logger.error(`[${requestId}] Both convert and rsvg-convert failed, skipping divider`);
+          // Continue without divider if conversion fails
+        }
+      }
 
-      // Text appears immediately (no fade animations for lower memory); characters fade in later
+      // Video dimensions (720p portrait for high quality)
+      const width = 720;
+      const height = 1280;
 
       // Character positioning (matching client-side layout)
       // Character takes 60% of height, centered horizontally
       const charHeightPercent = 0.60;
-      const charTopPercent = 0.22;
+      const charTopPercent = 0.4;
       const charHeight = Math.round(height * charHeightPercent);
       const charY = Math.round(height * charTopPercent);
 
-      // Text positions
-      const namesY = Math.round(height * 0.06);
-      const dateY = Math.round(height * 0.875);
-      const venueY = Math.round(height * 0.915);
+      // Text layout positions (text fades in at 10s after character fades out)
+      const brideNameY = Math.round(height * 0.18); // 18% from top = 230px
+      const brideDaughterY = brideNameY + 105;      // 105px below bride name = 335px
+      const wedsY = Math.round(height * 0.40);      // 40% from top = 512px
+      const groomNameY = 690;                       // Moved up by 20px (was 710)
+      const groomSonY = groomNameY + 105;           // 105px below groom name = 795px
+      const dividerY = Math.round(height * 0.68);   // 68% from top = 870px (moved up, now before date)
+      const dateY = dividerY + 90;                  // 90px below divider = 960px
+      const timeY = dateY + 80;                     // 80px below date = 1040px
 
-      // Font sizes (scaled for 540p - 75% of 720p)
-      const namesFontSize = Math.round(54 * 1.3);
-      const textFontSize = Math.round(54 * 0.75);
-      // Character animation timing (fade-in starts at third second)
-      const CHARACTER_FADE_START = 3;
-      const CHARACTER_FADE_DURATION = 1;
+      // Font sizes (updated per plan)
+      const brideGroomNameSize = 80;
+      const parentLineSize = 40;  // 20 → 40
+      const wedsSize = 60;        // 24 → 60
+      const dateSize = 40;        // 24 → 40
+      const timeSize = 30;        // 20 → 30
+      // Character animation timing
+      const CHARACTER_FADE_START = 2;
+      const CHARACTER_FADE_DURATION = 2;
+      const CHARACTER_FADE_OUT_START = 8;  // Start fading out at 8s
+      const CHARACTER_FADE_OUT_DURATION = 2;  // Fade out over 2s (done by 10s)
 
       // Escape special characters for FFmpeg drawtext
       const escapeText = (text) => text.replace(/'/g, "'\\''").replace(/:/g, "\\:");
 
-      // Build the names text (Bride & Groom)
-      const namesText = escapeText(`\u00A0\u00A0${brideName} & ${groomName}\u00A0\u00A0`);
-      const dateText = escapeText(date);
-      const venueText = escapeText(venue);
+      // Escape font file paths for FFmpeg (colons need escaping, use forward slashes)
+      const escapeFontPath = (fontPath) => fontPath.replace(/\\/g, '/').replace(/:/g, '\\:');
 
-      // Layers: scaled video → character overlay → text overlays
+      // Build text for each line
+      const brideNameText = escapeText(brideName);
+      const brideDaughterText = escapeText(`(Daughter of ${brideParents})`);
+      const wedsText = "WEDS";
+      const groomNameText = escapeText(groomName);
+      const groomSonText = escapeText(`(Son of ${groomParents})`);
+      const dateText = escapeText(date);
+      const timeText = escapeText(`${time} onwards`);
+
+      // Check if divider PNG was created successfully
+      let dividerExists = false;
+      try {
+        await fs.access(dividerPngPath);
+        dividerExists = true;
+      } catch {
+        // Divider not available, will skip in filter
+      }
+
+      // Layers: scaled video → character overlay → divider overlay → text overlays
       let filterComplex = `[0:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}[bg];`;
 
+      let inputIndex = 1;
       if (characterImage) {
-        // Scale character image and fade in starting at 3s
-        filterComplex += `[1:v]scale=-1:${charHeight},format=rgba,fade=in:st=${CHARACTER_FADE_START}:d=${CHARACTER_FADE_DURATION}:alpha=1[char];`;
+        // Scale character image, fade in at 2s, fade out by 10s
+        filterComplex += `[${inputIndex}:v]scale=-1:${charHeight},format=rgba,fade=in:st=${CHARACTER_FADE_START}:d=${CHARACTER_FADE_DURATION}:alpha=1,fade=out:st=${CHARACTER_FADE_OUT_START}:d=${CHARACTER_FADE_OUT_DURATION}:alpha=1[char];`;
         filterComplex += `[bg][char]overlay=(W-w)/2:${charY}[vid];`;
+        inputIndex++;
       } else {
         filterComplex += `[bg]copy[vid];`;
       }
 
-      // Add text overlays (no fade animations)
-      // Names text (gold color, script font)
-      filterComplex += `[vid]drawtext=fontfile='${GreatVibes}':text='${namesText}':fontsize=${namesFontSize}:fontcolor=0xD4A853:x=(w-text_w)/2:y=${namesY}[v1];`;
+      // Add divider overlay with fade-in at 10s (if available)
+      if (dividerExists) {
+        filterComplex += `[${inputIndex}:v]scale=400:-1,format=rgba,fade=in:st=10:d=2:alpha=1[divider];`;
+        filterComplex += `[vid][divider]overlay=(W-w)/2:${dividerY}[vid2];`;
+      } else {
+        filterComplex += `[vid]copy[vid2];`;
+      }
 
-      // Date text (brown color, serif font)
-      filterComplex += `[v1]drawtext=fontfile='${playfairFont}':text='${dateText}':fontsize=${textFontSize}:fontcolor=0x8B7355:x=(w-text_w)/2:y=${dateY}[v2];`;
+      // Add text overlays with fade-in at 10s over 2s duration
+      // Alpha expression: invisible until 10s, fade from 0 to 1 between 10-12s, then fully visible
+      const textAlpha = "if(lt(t,10),0,if(lt(t,12),((t-10)/2),1))";
 
-      // Venue text (brown color, serif font)
-      filterComplex += `[v2]drawtext=fontfile='${playfairFont}':text='${venueText}':fontsize=${textFontSize}:fontcolor=0x8B7355:x=(w-text_w)/2:y=${venueY}[vout]`;
+      // Escape font paths for FFmpeg drawtext filter
+      const playfairBoldEsc = escapeFontPath(playfairBold);
+      const playfairItalicEsc = escapeFontPath(playfairItalic);
+
+      // Bride name (Playfair Display Bold, 80px, #621d35)
+      filterComplex += `[vid2]drawtext=fontfile=${playfairBoldEsc}:text='${brideNameText}':fontsize=${brideGroomNameSize}:fontcolor=0x621D35:x=(w-text_w)/2:y=${brideNameY}:alpha='${textAlpha}'[v1];`;
+
+      // Daughter of... (Playfair Display Italic, 40px, #621d35)
+      filterComplex += `[v1]drawtext=fontfile=${playfairItalicEsc}:text='${brideDaughterText}':fontsize=${parentLineSize}:fontcolor=0x621D35:x=(w-text_w)/2:y=${brideDaughterY}:alpha='${textAlpha}'[v2];`;
+
+      // WEDS (Playfair Display Italic, 60px, #621d35)
+      filterComplex += `[v2]drawtext=fontfile=${playfairItalicEsc}:text='${wedsText}':fontsize=${wedsSize}:fontcolor=0x621D35:x=(w-text_w)/2:y=${wedsY}:alpha='${textAlpha}'[v3];`;
+
+      // Groom name (Playfair Display Bold, 80px, #621d35)
+      filterComplex += `[v3]drawtext=fontfile=${playfairBoldEsc}:text='${groomNameText}':fontsize=${brideGroomNameSize}:fontcolor=0x621D35:x=(w-text_w)/2:y=${groomNameY}:alpha='${textAlpha}'[v4];`;
+
+      // Son of... (Playfair Display Italic, 40px, #621d35)
+      filterComplex += `[v4]drawtext=fontfile=${playfairItalicEsc}:text='${groomSonText}':fontsize=${parentLineSize}:fontcolor=0x621D35:x=(w-text_w)/2:y=${groomSonY}:alpha='${textAlpha}'[v5];`;
+
+      // Date (Playfair Display Italic, 40px, #621d35)
+      filterComplex += `[v5]drawtext=fontfile=${playfairItalicEsc}:text='${dateText}':fontsize=${dateSize}:fontcolor=0x621D35:x=(w-text_w)/2:y=${dateY}:alpha='${textAlpha}'[v6];`;
+
+      // Time onwards (Playfair Display Italic, 30px, #621d35)
+      filterComplex += `[v6]drawtext=fontfile=${playfairItalicEsc}:text='${timeText}':fontsize=${timeSize}:fontcolor=0x621D35:x=(w-text_w)/2:y=${timeY}:alpha='${textAlpha}'[vout]`;
 
       // Build FFmpeg command
       // Use explicit -t on looped image input to avoid infinite stream + malformed moov atom
-      const inputs = characterImage
-        ? `-i "${backgroundVideoPath}" -loop 1 -t 15 -i "${characterPath}"`
-        : `-i "${backgroundVideoPath}"`;
+      let inputs = `-i "${backgroundVideoPath}"`;
+      if (characterImage) {
+        inputs += ` -loop 1 -t 15 -i "${characterPath}"`;
+      }
+      if (dividerExists) {
+        inputs += ` -loop 1 -t 15 -i "${dividerPngPath}"`;
+      }
 
-      const ffmpegCmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map 0:a? -c:v libx264 -preset ultrafast -threads 4 -crf 32 -maxrate 800k -bufsize 1600k -c:a aac -b:a 96k -pix_fmt yuv420p -movflags +faststart -shortest "${outputPath}"`;
+      const ffmpegCmd = `ffmpeg -y ${inputs} -filter_complex "${filterComplex}" -map "[vout]" -map 0:a? -c:v libx264 -preset fast -r 24 -crf 23 -maxrate 2500k -bufsize 5000k -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart -shortest "${outputPath}"`;
 
       try {
         await execAsync(ffmpegCmd, { timeout: 300000 });
@@ -542,8 +617,10 @@ app.listen(PORT, '0.0.0.0', async () => {
   // Check critical assets
   const assetPaths = {
     backgroundVideo: path.join(__dirname, "../frontend/public/assets/background.mp4"),
-    greatVibesFont: path.join(__dirname, "../frontend/public/fonts/GreatVibes-Regular.ttf"),
-    playfairFont: path.join(__dirname, "../frontend/public/fonts/PlayfairDisplay.ttf"),
+    dividerSvg: path.join(__dirname, "../frontend/public/assets/divider.svg"),
+    playfairRegular: path.join(__dirname, "../frontend/public/fonts/PlayfairDisplay.ttf"),
+    playfairBold: path.join(__dirname, "../frontend/public/fonts/PlayfairDisplay-Bold.ttf"),
+    playfairItalic: path.join(__dirname, "../frontend/public/fonts/PlayfairDisplay-Italic.ttf"),
   };
 
   for (const [name, filePath] of Object.entries(assetPaths)) {

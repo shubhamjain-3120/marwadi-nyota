@@ -93,14 +93,17 @@ export default function InputScreen({
 
   // Form fields - initialize from cache if available
   const [brideName, setBrideName] = useState(cachedData?.brideName || "");
+  const [brideParentName, setBrideParentName] = useState(cachedData?.brideParentName || "");
   const [groomName, setGroomName] = useState(cachedData?.groomName || "");
+  const [groomParentName, setGroomParentName] = useState(cachedData?.groomParentName || "");
+  const [weddingTime, setWeddingTime] = useState(cachedData?.weddingTime || "");
   const [weddingDate, setWeddingDate] = useState(cachedData?.weddingDate || "");
   const [venue, setVenue] = useState(cachedData?.venue || "");
 
   // Save form data to cache whenever it changes
   useEffect(() => {
-    saveCachedFormData({ brideName, groomName, weddingDate, venue });
-  }, [brideName, groomName, weddingDate, venue]);
+    saveCachedFormData({ brideName, brideParentName, groomName, groomParentName, weddingTime, weddingDate, venue });
+  }, [brideName, brideParentName, groomName, groomParentName, weddingTime, weddingDate, venue]);
 
   // Dev mode - enabled automatically when venue matches secret phrase
   const devMode = useMemo(() => {
@@ -165,7 +168,10 @@ export default function InputScreen({
     // Sanitize all user inputs before submission
     const formData = {
       brideName: sanitizeInput(brideName),
+      brideParentName: sanitizeInput(brideParentName),
       groomName: sanitizeInput(groomName),
+      groomParentName: sanitizeInput(groomParentName),
+      time: weddingTime,
       date: formatDateForInvite(weddingDate),
       venue: sanitizeInput(venue),
       photo, // Single couple photo
@@ -221,12 +227,24 @@ export default function InputScreen({
             {/* Details */}
             <div className="modal-details">
               <div className="modal-detail-item">
+                <span className="modal-detail-label">दुल्हन का नाम (Bride's Name):</span>
+                <span className="modal-detail-value">{validatedFormData.brideName}</span>
+              </div>
+              <div className="modal-detail-item">
+                <span className="modal-detail-label">दुल्हन के पिता का नाम (Bride's Parent's Name):</span>
+                <span className="modal-detail-value">{validatedFormData.brideParentName}</span>
+              </div>
+              <div className="modal-detail-item">
                 <span className="modal-detail-label">दूल्हे का नाम (Groom's Name):</span>
                 <span className="modal-detail-value">{validatedFormData.groomName}</span>
               </div>
               <div className="modal-detail-item">
-                <span className="modal-detail-label">दुल्हन का नाम (Bride's Name):</span>
-                <span className="modal-detail-value">{validatedFormData.brideName}</span>
+                <span className="modal-detail-label">दूल्हे के पिता का नाम (Groom's Parent's Name):</span>
+                <span className="modal-detail-value">{validatedFormData.groomParentName}</span>
+              </div>
+              <div className="modal-detail-item">
+                <span className="modal-detail-label">समय (Time):</span>
+                <span className="modal-detail-value">{validatedFormData.time}</span>
               </div>
               <div className="modal-detail-item">
                 <span className="modal-detail-label">शादी की तारीख (Wedding Date):</span>
@@ -272,79 +290,164 @@ export default function InputScreen({
       </div>
 
       <form onSubmit={handleSubmit} className="form">
-        {/* Names Section */}
-        <div className="form-row">
-          <div className="form-group">
-            <label htmlFor="groomName">Groom Name / दूल्हे का नाम</label>
-            <div className="input-with-voice">
-              <input
-                type="text"
-                id="groomName"
-                value={groomName}
-                onChange={(e) => setGroomName(e.target.value)}
-                placeholder="Enter groom's name"
-                autoComplete="off"
-                autoCapitalize="words"
-                inputMode="text"
-                maxLength={CHAR_LIMITS.name}
-                required
-              />
-              {isSupported && (
-                <button
-                  type="button"
-                  className={`voice-btn ${isListening && activeField === "groomName" ? "listening" : ""}`}
-                  onClick={() => handleVoiceInput("groomName", setGroomName)}
-                  aria-label="Voice input for groom name"
-                >
-                  <svg className="voice-icon" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                  </svg>
-                </button>
-              )}
-            </div>
-            {groomName.length >= CHAR_LIMITS.name && (
-              <span className="field-error">
-                Name is too long / नाम की लंबाई कम कीजिए
-              </span>
+        {/* Bride Name */}
+        <div className="form-group">
+          <label htmlFor="brideName">Bride Name / दुल्हन का नाम</label>
+          <div className="input-with-voice">
+            <input
+              type="text"
+              id="brideName"
+              value={brideName}
+              onChange={(e) => setBrideName(e.target.value)}
+              placeholder="Enter bride's name"
+              autoComplete="off"
+              autoCapitalize="words"
+              inputMode="text"
+              maxLength={CHAR_LIMITS.name}
+              required
+            />
+            {isSupported && (
+              <button
+                type="button"
+                className={`voice-btn ${isListening && activeField === "brideName" ? "listening" : ""}`}
+                onClick={() => handleVoiceInput("brideName", setBrideName)}
+                aria-label="Voice input for bride name"
+              >
+                <svg className="voice-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              </button>
             )}
           </div>
+          {brideName.length >= CHAR_LIMITS.name && (
+            <span className="field-error">
+              Name is too long / नाम की लंबाई कम कीजिए
+            </span>
+          )}
+        </div>
 
-          <div className="form-group">
-            <label htmlFor="brideName">Bride Name / दुल्हन का नाम</label>
-            <div className="input-with-voice">
-              <input
-                type="text"
-                id="brideName"
-                value={brideName}
-                onChange={(e) => setBrideName(e.target.value)}
-                placeholder="Enter bride's name"
-                autoComplete="off"
-                autoCapitalize="words"
-                inputMode="text"
-                maxLength={CHAR_LIMITS.name}
-                required
-              />
-              {isSupported && (
-                <button
-                  type="button"
-                  className={`voice-btn ${isListening && activeField === "brideName" ? "listening" : ""}`}
-                  onClick={() => handleVoiceInput("brideName", setBrideName)}
-                  aria-label="Voice input for bride name"
-                >
-                  <svg className="voice-icon" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                  </svg>
-                </button>
-              )}
-            </div>
-            {brideName.length >= CHAR_LIMITS.name && (
-              <span className="field-error">
-                Name is too long / नाम की लंबाई कम कीजिए
-              </span>
+        {/* Bride's Parent Name */}
+        <div className="form-group">
+          <label htmlFor="brideParentName">Bride's Parent's Name / दुल्हन के पिता का नाम</label>
+          <div className="input-with-voice">
+            <input
+              type="text"
+              id="brideParentName"
+              value={brideParentName}
+              onChange={(e) => setBrideParentName(e.target.value)}
+              placeholder="Enter bride's parent's name"
+              autoComplete="off"
+              autoCapitalize="words"
+              inputMode="text"
+              maxLength={CHAR_LIMITS.name}
+              required
+            />
+            {isSupported && (
+              <button
+                type="button"
+                className={`voice-btn ${isListening && activeField === "brideParentName" ? "listening" : ""}`}
+                onClick={() => handleVoiceInput("brideParentName", setBrideParentName)}
+                aria-label="Voice input for bride parent name"
+              >
+                <svg className="voice-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              </button>
             )}
           </div>
+          {brideParentName.length >= CHAR_LIMITS.name && (
+            <span className="field-error">
+              Name is too long / नाम की लंबाई कम कीजिए
+            </span>
+          )}
+        </div>
+
+        {/* Groom Name */}
+        <div className="form-group">
+          <label htmlFor="groomName">Groom Name / दूल्हे का नाम</label>
+          <div className="input-with-voice">
+            <input
+              type="text"
+              id="groomName"
+              value={groomName}
+              onChange={(e) => setGroomName(e.target.value)}
+              placeholder="Enter groom's name"
+              autoComplete="off"
+              autoCapitalize="words"
+              inputMode="text"
+              maxLength={CHAR_LIMITS.name}
+              required
+            />
+            {isSupported && (
+              <button
+                type="button"
+                className={`voice-btn ${isListening && activeField === "groomName" ? "listening" : ""}`}
+                onClick={() => handleVoiceInput("groomName", setGroomName)}
+                aria-label="Voice input for groom name"
+              >
+                <svg className="voice-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              </button>
+            )}
+          </div>
+          {groomName.length >= CHAR_LIMITS.name && (
+            <span className="field-error">
+              Name is too long / नाम की लंबाई कम कीजिए
+            </span>
+          )}
+        </div>
+
+        {/* Groom's Parent Name */}
+        <div className="form-group">
+          <label htmlFor="groomParentName">Groom's Parent's Name / दूल्हे के पिता का नाम</label>
+          <div className="input-with-voice">
+            <input
+              type="text"
+              id="groomParentName"
+              value={groomParentName}
+              onChange={(e) => setGroomParentName(e.target.value)}
+              placeholder="Enter groom's parent's name"
+              autoComplete="off"
+              autoCapitalize="words"
+              inputMode="text"
+              maxLength={CHAR_LIMITS.name}
+              required
+            />
+            {isSupported && (
+              <button
+                type="button"
+                className={`voice-btn ${isListening && activeField === "groomParentName" ? "listening" : ""}`}
+                onClick={() => handleVoiceInput("groomParentName", setGroomParentName)}
+                aria-label="Voice input for groom parent name"
+              >
+                <svg className="voice-icon" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              </button>
+            )}
+          </div>
+          {groomParentName.length >= CHAR_LIMITS.name && (
+            <span className="field-error">
+              Name is too long / नाम की लंबाई कम कीजिए
+            </span>
+          )}
+        </div>
+
+        {/* Time Section */}
+        <div className="form-group">
+          <label htmlFor="weddingTime">Wedding Time / शादी का समय</label>
+          <input
+            type="time"
+            id="weddingTime"
+            value={weddingTime}
+            onChange={(e) => setWeddingTime(e.target.value)}
+            required
+          />
         </div>
 
         {/* Date Section */}

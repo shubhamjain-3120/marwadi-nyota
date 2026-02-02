@@ -160,7 +160,7 @@ async function compressCharacterImage(dataURL, maxWidth = 1080) {
  * - 30-90%: Server-side video composition
  * - 90-100%: Downloading MP4
  */
-async function serverComposeVideo({ characterImage, brideName, groomName, date, venue, onProgress }) {
+async function serverComposeVideo({ characterImage, brideName, groomName, date, time, brideParents, groomParents, onProgress }) {
   const startTime = performance.now();
   logger.log("Starting server-side video composition", {
     API_URL: API_URL || '(empty - using relative path)',
@@ -169,7 +169,9 @@ async function serverComposeVideo({ characterImage, brideName, groomName, date, 
     brideName,
     groomName,
     date,
-    venue,
+    time,
+    brideParents,
+    groomParents,
   });
 
   const formData = new FormData();
@@ -183,7 +185,9 @@ async function serverComposeVideo({ characterImage, brideName, groomName, date, 
   formData.append("brideName", brideName);
   formData.append("groomName", groomName);
   formData.append("date", date);
-  formData.append("venue", venue);
+  formData.append("time", time);
+  formData.append("brideParents", brideParents);
+  formData.append("groomParents", groomParents);
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -544,12 +548,12 @@ const LAYOUT_V4 = {
 const COLORS = SHARED_COLORS;
 
 // Animation timing for staggered fade-in (in seconds)
-// Total animation sequence: 7 seconds
+// Total animation sequence: 9 seconds
 const ANIMATION = {
-  names: { start: 2.5, end: 3 },        // 2-3s: Names fade in (1s duration)
-  date: { start: 2.5, end: 3 },         // 3-4s: Date fades in (1s duration)
-  venue: { start: 2.5, end: 3 },        // 4-5s: Venue fades in (1s duration)
-  character: { start: 5, end: 6 }     // 5-7s: Character fades in (2s duration)
+  names: { start: 5, end: 6 },        // 4.5-5s: Names fade in (0.5s duration)
+  date: { start: 5, end: 6 },         // 4.5-5s: Date fades in (0.5s duration)
+  venue: { start: 5, end: 6 },        // 4.5-5s: Venue fades in (0.5s duration)
+  character: { start: 5, end: 6 }     // 7-8s: Character fades in (1s duration)
 };
 
 // Track animation states for logging
@@ -1005,7 +1009,9 @@ export async function composeVideoInvite({
   brideName,
   groomName,
   date,
-  venue,
+  time,
+  brideParents,
+  groomParents,
   onProgress = () => {}
 }) {
   const compositionStartTime = performance.now();
@@ -1014,7 +1020,9 @@ export async function composeVideoInvite({
     brideName,
     groomName,
     date,
-    venue,
+    time,
+    brideParents,
+    groomParents,
     characterImageSize: characterImage ? `${(characterImage.length / 1024).toFixed(1)}KB` : 'N/A',
     timestamp: new Date().toISOString(),
     userAgent: navigator.userAgent.slice(0, 100),
@@ -1029,7 +1037,9 @@ export async function composeVideoInvite({
       brideName,
       groomName,
       date,
-      venue,
+      time,
+      brideParents,
+      groomParents,
       onProgress,
     });
 

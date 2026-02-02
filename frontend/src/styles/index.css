@@ -310,7 +310,8 @@ html, body {
 }
 
 .form-group input[type="text"],
-.form-group input[type="date"] {
+.form-group input[type="date"],
+.form-group input[type="time"] {
   padding: 14px 16px;
   min-height: 48px;
   border: 2px solid #DDD;
@@ -321,7 +322,8 @@ html, body {
 }
 
 .form-group input[type="text"]:focus,
-.form-group input[type="date"]:focus {
+.form-group input[type="date"]:focus,
+.form-group input[type="time"]:focus {
   outline: none;
   border-color: var(--color-gold);
 }
@@ -1409,7 +1411,8 @@ html, body {
   }
 
   .form-group input[type="text"],
-  .form-group input[type="date"] {
+  .form-group input[type="date"],
+  .form-group input[type="time"] {
     padding: 12px 14px;
   }
 
@@ -1494,7 +1497,8 @@ html, body {
   }
 
   .form-group input[type="text"],
-  .form-group input[type="date"] {
+  .form-group input[type="date"],
+  .form-group input[type="time"] {
     padding: 10px 12px;
     font-size: 15px;
   }
