@@ -1,18 +1,32 @@
+import mixpanel from 'mixpanel-browser';
+
 /**
- * Google Analytics 4 (GA4) tracking utilities
- * 
+ * Analytics tracking utilities - sends to both Mixpanel and Google Analytics 4 (GA4)
+ *
  * Usage:
  * - trackPageView('screen_name', { optional_params })
  * - trackClick('event_name', { optional_params })
  */
 
 /**
- * Track a page/screen view in Google Analytics 4
+ * Track a page/screen view in Mixpanel and Google Analytics 4
  * @param {string} pageName - Name of the page/screen being viewed
  * @param {Object} [params={}] - Additional parameters to send with the event
  * @returns {void}
  */
 export function trackPageView(pageName, params = {}) {
+  // Send to Mixpanel
+  try {
+    mixpanel.track_pageview();
+    mixpanel.track('Page View', {
+      page_name: pageName,
+      ...params
+    });
+  } catch (err) {
+    console.warn('Mixpanel tracking failed:', err);
+  }
+
+  // Send to Google Analytics (if configured)
   if (typeof window !== 'undefined' && typeof window.gtag === 'function') {
     window.gtag('event', 'page_view', {
       page_title: pageName,
@@ -22,12 +36,20 @@ export function trackPageView(pageName, params = {}) {
 }
 
 /**
- * Track a button click or user action in Google Analytics 4
+ * Track a button click or user action in Mixpanel and Google Analytics 4
  * @param {string} eventName - Name of the event (e.g., 'video_download', 'form_submit')
  * @param {Object} [params={}] - Additional parameters to send with the event
  * @returns {void}
  */
 export function trackClick(eventName, params = {}) {
+  // Send to Mixpanel
+  try {
+    mixpanel.track(eventName, params);
+  } catch (err) {
+    console.warn('Mixpanel tracking failed:', err);
+  }
+
+  // Send to Google Analytics (if configured)
   if (typeof window !== 'undefined' && typeof window.gtag === 'function') {
     window.gtag('event', eventName, params);
   }

@@ -8,6 +8,8 @@ import { removeImageBackground, dataURLToBlob } from "./utils/backgroundRemoval"
 import { createDevLogger } from "./utils/devLogger";
 import { incrementGenerationCount } from "./utils/rateLimit";
 import { getImageProcessingService, resetImageProcessingService, STATES } from "./utils/imageProcessingService";
+import { initializeIAP, isIAPEnabled } from "./utils/iapManager";
+import { trackClick } from "./utils/analytics";
 
 // Lazy load components that aren't immediately needed
 const ResultScreen = lazy(() => import("./components/ResultScreen"));
@@ -218,6 +220,17 @@ export default function App() {
     }
   }, [screen]);
 
+  // Initialize IAP on app startup (Android only)
+  useEffect(() => {
+    if (isIAPEnabled()) {
+      logger.log('Initializing Google Play IAP...');
+      initializeIAP().catch(err => {
+        logger.error('IAP init failed (non-blocking):', err);
+        // Don't crash app - IAP is optional feature
+      });
+    }
+  }, []);
+
   // Navigation handler: Sample video → Photo upload
   const handleSampleVideoComplete = useCallback(() => {
     logger.log("Sample video complete, navigating to photo upload");
@@ -295,6 +308,12 @@ export default function App() {
     setScreen(SCREENS.LOADING);
     setLoadingCompleted(false);
     setError(null);
+
+    // Track generation started
+    trackClick('generation_started', {
+      dev_mode: generationFormData.devMode,
+      has_photo: !!generationFormData.photo,
+    });
 
     logger.log("Generation started", {
       devMode: generationFormData.devMode,
@@ -538,6 +557,11 @@ export default function App() {
       logger.log("Step 5: Transitioning to result screen");
       setScreen(SCREENS.RESULT);
 
+      // Track generation completed
+      trackClick('generation_completed', {
+        dev_mode: generationFormData.devMode,
+      });
+
       logger.log("Generation complete - all steps successful");
 
     } catch (err) {
@@ -547,6 +571,10 @@ export default function App() {
         return;
       }
       logger.error("Generation failed", err);
+      trackClick('generation_failed', {
+        error_message: err.message,
+        error_type: err.name || 'unknown',
+      });
       setError(err.message);
       setScreen(SCREENS.INPUT);
     }
@@ -560,6 +588,9 @@ export default function App() {
     }
 
     logger.log("User cancelled generation");
+
+    // Track cancellation
+    trackClick('generation_cancelled');
 
     // Reset state and go back to input screen
     setScreen(SCREENS.INPUT);
@@ -683,6 +714,7 @@ export default function App() {
             inviteVideo={finalInvite}
             brideName={formData?.brideName}
             groomName={formData?.groomName}
+            venue={formData?.venue}
             onReset={handleReset}
           />
         )}
