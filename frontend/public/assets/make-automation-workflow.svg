@@ -1,0 +1,43 @@
+<svg width="1120" height="920" viewBox="0 0 1120 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1120" height="920" rx="32" fill="#17191F"/>
+  <rect x="42" y="42" width="1036" height="836" rx="24" fill="#F7F8F4"/>
+  <rect x="80" y="80" width="960" height="88" rx="14" fill="#111318"/>
+  <circle cx="125" cy="124" r="13" fill="#E96F5D"/>
+  <circle cx="165" cy="124" r="13" fill="#E6A13A"/>
+  <circle cx="205" cy="124" r="13" fill="#0E8F82"/>
+  <text x="250" y="132" fill="#F7F8F4" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">Make.com Sales Automation Command Center</text>
+  <rect x="80" y="210" width="230" height="156" rx="18" fill="#FFFFFF" stroke="#DFE4EC" stroke-width="2"/>
+  <text x="110" y="264" fill="#6D3DF5" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">Lead In</text>
+  <text x="110" y="306" fill="#5B6472" font-family="Inter, Arial, sans-serif" font-size="20">Forms - Ads - Calls</text>
+  <text x="110" y="337" fill="#5B6472" font-family="Inter, Arial, sans-serif" font-size="20">Chats - Referrals</text>
+  <rect x="445" y="190" width="230" height="196" rx="28" fill="#6D3DF5"/>
+  <text x="505" y="273" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="800">Make</text>
+  <text x="480" y="317" fill="#EFE8FF" font-family="Inter, Arial, sans-serif" font-size="20">Routers - Filters</text>
+  <text x="486" y="350" fill="#EFE8FF" font-family="Inter, Arial, sans-serif" font-size="20">Retries - Logs</text>
+  <rect x="810" y="210" width="230" height="156" rx="18" fill="#FFFFFF" stroke="#DFE4EC" stroke-width="2"/>
+  <text x="840" y="264" fill="#0E8F82" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">GHL Pipeline</text>
+  <text x="840" y="306" fill="#5B6472" font-family="Inter, Arial, sans-serif" font-size="20">Owner assigned</text>
+  <text x="840" y="337" fill="#5B6472" font-family="Inter, Arial, sans-serif" font-size="20">Stage updated</text>
+  <path d="M325 288H425" stroke="#111318" stroke-width="8" stroke-linecap="round"/>
+  <path d="M410 264L438 288L410 312" stroke="#111318" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M695 288H790" stroke="#111318" stroke-width="8" stroke-linecap="round"/>
+  <path d="M775 264L803 288L775 312" stroke="#111318" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="118" y="512" width="250" height="168" rx="18" fill="#FFFFFF" stroke="#DFE4EC" stroke-width="2"/>
+  <text x="148" y="566" fill="#E96F5D" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">Follow-up</text>
+  <text x="148" y="608" fill="#5B6472" font-family="Inter, Arial, sans-serif" font-size="20">SMS - Email</text>
+  <text x="148" y="639" fill="#5B6472" font-family="Inter, Arial, sans-serif" font-size="20">Tasks - Reminders</text>
+  <rect x="435" y="512" width="250" height="168" rx="18" fill="#FFFFFF" stroke="#DFE4EC" stroke-width="2"/>
+  <text x="465" y="566" fill="#E6A13A" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">Invoice</text>
+  <text x="465" y="608" fill="#5B6472" font-family="Inter, Arial, sans-serif" font-size="20">Xero - Payments</text>
+  <text x="465" y="639" fill="#5B6472" font-family="Inter, Arial, sans-serif" font-size="20">Client folders</text>
+  <rect x="752" y="512" width="250" height="168" rx="18" fill="#FFFFFF" stroke="#DFE4EC" stroke-width="2"/>
+  <text x="782" y="566" fill="#6D3DF5" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">Dashboard</text>
+  <text x="782" y="608" fill="#5B6472" font-family="Inter, Arial, sans-serif" font-size="20">Response speed</text>
+  <text x="782" y="639" fill="#5B6472" font-family="Inter, Arial, sans-serif" font-size="20">Failures - Revenue</text>
+  <path d="M560 405V474" stroke="#111318" stroke-width="8" stroke-linecap="round"/>
+  <path d="M536 459L560 487L584 459" stroke="#111318" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M560 474H244V492" stroke="#111318" stroke-width="8" stroke-linecap="round"/>
+  <path d="M560 474H877V492" stroke="#111318" stroke-width="8" stroke-linecap="round"/>
+  <rect x="118" y="740" width="884" height="68" rx="14" fill="#111318"/>
+  <text x="157" y="783" fill="#FFFFFF" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">Fast response - clean handoffs - edge-case tested - maintainable scenarios</text>
+</svg>

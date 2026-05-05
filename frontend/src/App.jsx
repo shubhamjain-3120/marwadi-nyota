@@ -1,724 +1,242 @@
-import { useState, useCallback, useEffect, useRef, lazy, Suspense } from "react";
-import InputScreen from "./components/InputScreen";
-import LoadingScreen from "./components/LoadingScreen";
-import SampleVideoScreen from "./components/SampleVideoScreen";
-import PhotoUploadScreen from "./components/PhotoUploadScreen";
-import { composeVideoInvite } from "./utils/videoComposer";
-import { removeImageBackground, dataURLToBlob } from "./utils/backgroundRemoval";
-import { createDevLogger } from "./utils/devLogger";
-import { incrementGenerationCount } from "./utils/rateLimit";
-import { getImageProcessingService, resetImageProcessingService, STATES } from "./utils/imageProcessingService";
-import { initializeIAP, isIAPEnabled } from "./utils/iapManager";
-import { trackClick } from "./utils/analytics";
+const services = [
+  {
+    number: "01",
+    title: "Lead capture and routing",
+    text: "Send forms, ads, calls, chats, and inbound requests into the right GHL pipeline, owner, and follow-up path within seconds.",
+  },
+  {
+    number: "02",
+    title: "Missed-call recovery",
+    text: "Trigger SMS, email, task creation, voicemail tagging, and rep alerts so high-intent leads are contacted before they cool down.",
+  },
+  {
+    number: "03",
+    title: "CRM and pipeline hygiene",
+    text: "Deduplicate records, normalize fields, update stages, enrich contacts, and keep Make.com scenarios readable for your team.",
+  },
+  {
+    number: "04",
+    title: "Quote, invoice, and payment flows",
+    text: "Move won deals into invoices, payment links, Xero records, client folders, and internal handoff tasks without manual copy-paste.",
+  },
+  {
+    number: "05",
+    title: "Ops dashboards and alerts",
+    text: "Track bottlenecks, failed automations, lead response speed, booked calls, revenue movement, and owner-level follow-through.",
+  },
+  {
+    number: "06",
+    title: "Automation repair and cleanup",
+    text: "Replace brittle Zapier or Make.com spaghetti with modular, documented scenarios that survive real users and messy data.",
+  },
+];
 
-// Lazy load components that aren't immediately needed
-const ResultScreen = lazy(() => import("./components/ResultScreen"));
+const packages = [
+  {
+    title: "Automation Audit",
+    text: "Map your current lead flow, find leaks, and identify the fastest wins.",
+    bullets: ["Scenario and CRM review", "Lead-response gap analysis", "Prioritized automation plan"],
+  },
+  {
+    title: "Sales Pipeline Build",
+    text: "Design and launch a complete Make.com sales automation system.",
+    bullets: ["Lead capture and routing", "GHL pipeline and task automation", "Testing, documentation, and handoff"],
+    featured: true,
+  },
+  {
+    title: "Ongoing Automation Partner",
+    text: "Keep improving your systems as campaigns, tools, and offers change.",
+    bullets: ["New scenario builds", "Monitoring and fixes", "Monthly optimization backlog"],
+  },
+];
 
-const logger = createDevLogger("App");
-
-// Back arrow icon
-const BackArrowIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M19 12H5M12 19l-7-7 7-7"/>
-  </svg>
-);
-
-// Speaker icons for music toggle
-const SpeakerOnIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-  </svg>
-);
-
-const SpeakerOffIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-    <line x1="23" y1="9" x2="17" y2="15" />
-    <line x1="17" y1="9" x2="23" y2="15" />
-  </svg>
-);
-
-// API URL - uses environment variable in production, empty string (relative) in dev
-// Strip trailing slashes to prevent double-slash URLs like "host//api/generate"
-const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
-
-const SCREENS = {
-  SAMPLE_VIDEO: "sample_video",
-  PHOTO_UPLOAD: "photo_upload",
-  INPUT: "input",
-  LOADING: "loading",
-  RESULT: "result",
-};
-
-// Brief delay (ms) to show 100% before transitioning to result
-const COMPLETION_DELAY_MS = 500;
-
-// API retry configuration
-const MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY_MS = 1000;
-
-/**
- * Fetch with exponential backoff retry logic
- * Retries on network errors and 5xx server errors (NOT client errors 4xx)
- *
- * @param {string} url - URL to fetch
- * @param {RequestInit} options - Fetch options (method, body, headers, etc.)
- * @param {number} [retries=MAX_RETRIES] - Max retry attempts (default: 3)
- * @param {AbortSignal} [signal=null] - AbortSignal for cancellation support
- * @returns {Promise<Response>} - Fetch response if successful
- * @throws {Error} - Throws after all retries exhausted or if aborted
- */
-async function fetchWithRetry(url, options, retries = MAX_RETRIES, signal = null) {
-  let lastError;
-
-  // Merge signal into options if provided
-  const fetchOptions = signal ? { ...options, signal } : options;
-
-  for (let attempt = 0; attempt < retries; attempt++) {
-    // Check if aborted before attempting
-    if (signal?.aborted) {
-      throw new DOMException('Request was cancelled', 'AbortError');
-    }
-
-    try {
-      const response = await fetch(url, fetchOptions);
-
-      // Don't retry client errors (4xx), only server errors (5xx)
-      if (response.ok || (response.status >= 400 && response.status < 500)) {
-        return response;
-      }
-
-      // Server error - will retry
-      lastError = new Error(`Server error: ${response.status}`);
-      logger.warn(`API attempt ${attempt + 1} failed with status ${response.status}`);
-    } catch (err) {
-      // If aborted, throw immediately without retry
-      if (err.name === 'AbortError') {
-        throw err;
-      }
-      // Network error - will retry
-      lastError = err;
-      logger.warn(`API attempt ${attempt + 1} failed: ${err.message}`);
-    }
-
-    // Don't delay after the last attempt
-    if (attempt < retries - 1) {
-      const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt);
-      logger.log(`Retrying in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-
-  throw lastError;
-}
-
-/**
- * Custom hook for network status detection
- */
-function useNetworkStatus() {
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine : true
-  );
-
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      logger.log("Network status: online");
-    };
-    
-    const handleOffline = () => {
-      setIsOnline(false);
-      logger.log("Network status: offline");
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
-  return isOnline;
-}
+const process = [
+  ["Map the revenue flow", "We trace every lead source, decision point, owner, field, and handoff."],
+  ["Build in Make.com", "I create modular scenarios with clear filters, routers, retries, and logs."],
+  ["Test the ugly cases", "We validate duplicates, missing data, failures, delays, and handoff gaps."],
+  ["Launch and hand over", "Your team gets a clean system, simple docs, and a clear next-step backlog."],
+];
 
 export default function App() {
-  // Always start with sample video screen
-  const [screen, setScreen] = useState(SCREENS.SAMPLE_VIDEO);
-  const [formData, setFormData] = useState(null);
-  const [finalInvite, setFinalInvite] = useState(null);
-  const [error, setError] = useState(null);
-  const [loadingCompleted, setLoadingCompleted] = useState(false);
-
-  // New state for photo upload and processing
-  const [uploadedPhoto, setUploadedPhoto] = useState(null);
-  const [processingStatus, setProcessingStatus] = useState({ state: 'idle' });
-  const processingServiceRef = useRef(null);
-
-  // Network status detection
-  const isOnline = useNetworkStatus();
-
-  // Background music state
-  const [isMusicPlaying, setIsMusicPlaying] = useState(true);
-  const audioRef = useRef(null);
-
-  // AbortController for cancelling ongoing generation
-  const abortControllerRef = useRef(null);
-
-  // NOTE: Background removal model preload has been DISABLED to prevent UI blocking.
-  // The model will be loaded on-demand when the user generates an invite.
-  // This makes the page fully responsive at all times.
-  // The trade-off is the first generation will take ~30-40 seconds longer.
-
-  // Initialize background music (audio instance only)
-  useEffect(() => {
-    const audio = new Audio("/assets/bg_audio.mp3");
-    audio.loop = true;
-    audio.volume = 0.05; // 5% volume
-    audioRef.current = audio;
-
-    // Cleanup on unmount
-    return () => {
-      audio.pause();
-      audio.src = "";
-    };
-  }, []);
-
-  // Toggle background music
-  const toggleMusic = useCallback(() => {
-    if (!audioRef.current) return;
-    
-    if (isMusicPlaying) {
-      audioRef.current.pause();
-      setIsMusicPlaying(false);
-    } else {
-      audioRef.current.play().catch(() => {
-        logger.warn("Audio", "Could not play audio");
-      });
-      setIsMusicPlaying(true);
-    }
-  }, [isMusicPlaying]);
-
-  // Play background music only on loading screen
-  useEffect(() => {
-    if (!audioRef.current) return;
-
-    if (screen === SCREENS.LOADING) {
-      // Start playing audio on loading screen
-      audioRef.current.play().catch(() => {
-        setIsMusicPlaying(false);
-      });
-      setIsMusicPlaying(true);
-    } else {
-      // Stop audio on all other screens
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0; // Reset to start
-      setIsMusicPlaying(false);
-    }
-  }, [screen]);
-
-  // Initialize IAP on app startup (Android only)
-  useEffect(() => {
-    if (isIAPEnabled()) {
-      logger.log('Initializing Google Play IAP...');
-      initializeIAP().catch(err => {
-        logger.error('IAP init failed (non-blocking):', err);
-        // Don't crash app - IAP is optional feature
-      });
-    }
-  }, []);
-
-  // Navigation handler: Sample video → Photo upload
-  const handleSampleVideoComplete = useCallback(() => {
-    logger.log("Sample video complete, navigating to photo upload");
-    setScreen(SCREENS.PHOTO_UPLOAD);
-  }, []);
-
-  // Navigation handler: Photo upload → Input form
-  const handlePhotoSelected = useCallback(({ photo, processingService, processingState }) => {
-    logger.log("Photo selected, navigating to input form", {
-      photoSize: `${(photo.size / 1024).toFixed(1)} KB`,
-      processingState: processingState?.state,
-    });
-
-    setUploadedPhoto(photo);
-    processingServiceRef.current = processingService;
-    setProcessingStatus(processingState || { state: 'idle' });
-
-    // Subscribe to processing updates
-    if (processingService) {
-      const unsubscribe = processingService.on((status) => {
-        setProcessingStatus(status);
-      });
-      // Store unsubscribe for cleanup (we'll rely on reset instead)
-    }
-
-    setScreen(SCREENS.INPUT);
-  }, []);
-
-  // Navigation handler: Change photo → Back to photo upload
-  // Helper function to wait for processing to complete
-  const waitForProcessing = (service) => {
-    return new Promise((resolve, reject) => {
-      if (service.isDone()) {
-        resolve(service.getStatus());
-        return;
-      }
-
-      const unsubscribe = service.on((status) => {
-        if (status.state === STATES.READY) {
-          unsubscribe();
-          resolve(status);
-        } else if (status.state === STATES.FAILED) {
-          unsubscribe();
-          reject(new Error(status.error || "Processing failed"));
-        }
-      });
-    });
-  };
-
-  /**
-   * Core generation pipeline for wedding invites
-   *
-   * Orchestrates the entire invite generation workflow:
-   * 1. Get/wait for AI-generated character image (from processing service or API)
-   * 2. Remove background from character (if not already done)
-   * 3. Compose video with character overlay and text (server-side)
-   *
-   * @param {Object} generationFormData - Form data with names, date, venue, photo
-   * @param {string} generationFormData.brideName - Bride's name
-   * @param {string} generationFormData.groomName - Groom's name
-   * @param {string} generationFormData.date - Wedding date (formatted)
-   * @param {string} generationFormData.venue - Wedding venue
-   * @param {File} generationFormData.photo - Uploaded couple photo
-   * @param {boolean} generationFormData.devMode - Skip API calls if true
-   * @param {File} [generationFormData.characterFile] - Dev mode: local character file
-   * @param {boolean} [generationFormData.skipBackgroundRemoval] - Dev mode: skip bg removal
-   * @param {boolean} [generationFormData.skipVideoGeneration] - Dev mode: skip video composition
-   */
-  const handleGenerate = useCallback(async (generationFormData) => {
-    // Create new AbortController for this generation
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-
-    setFormData(generationFormData);
-    setScreen(SCREENS.LOADING);
-    setLoadingCompleted(false);
-    setError(null);
-
-    // Track generation started
-    trackClick('generation_started', {
-      dev_mode: generationFormData.devMode,
-      has_photo: !!generationFormData.photo,
-    });
-
-    logger.log("Generation started", {
-      devMode: generationFormData.devMode,
-      brideName: generationFormData.brideName,
-      groomName: generationFormData.groomName,
-      hasPhoto: !!generationFormData.photo,
-      hasCharacterFile: !!generationFormData.characterFile,
-      skipExtraction: generationFormData.skipExtraction,
-      skipImageGeneration: generationFormData.skipImageGeneration,
-      skipBackgroundRemoval: generationFormData.skipBackgroundRemoval,
-      skipVideoGeneration: generationFormData.skipVideoGeneration,
-      videoComposition: "server-side", // Always use server for consistent quality
-    });
-
-    try {
-      let characterImage;
-
-      // Step 1: Get character image
-      // Priority: 1) Background processing service (if ready), 2) Dev mode local file, 3) API call
-      const service = processingServiceRef.current;
-      const shouldSkipAPI = generationFormData.devMode && (generationFormData.skipExtraction || generationFormData.skipImageGeneration);
-
-      // Check if photo is fully processed (extraction + generation + evaluation + bg removal)
-      const isPhotoProcessed = service?.isPhotoFullyProcessed?.() || false;
-      const serviceState = service?.getStatus()?.state;
-      const processingStarted = serviceState && serviceState !== 'idle';
-
-      logger.log("Step 1: Checking photo processing status", {
-        isPhotoProcessed,
-        serviceState,
-        processingStarted,
-        isImageReady: service?.isImageReady(),
-      });
-
-      // If photo is not processed, wait for processing to complete before video generation
-      if (service && !isPhotoProcessed && processingStarted && !service.isDone()) {
-        logger.log("Step 1: Photo not fully processed, waiting for processing to complete");
-
-        try {
-          const status = await waitForProcessing(service);
-          characterImage = status.processedImage;
-
-          logger.log("Step 1 complete: Photo processing finished", {
-            imageLength: characterImage?.length,
-            isPhotoProcessed: status.isPhotoProcessed,
-          });
-        } catch (processingError) {
-          // Processing failed - use fallback image from service (original with bg removed)
-          logger.warn("Step 1: Photo processing failed, using fallback", processingError.message);
-          characterImage = service.getStatus().processedImage;
-        }
-      } else if (service?.isImageReady() && isPhotoProcessed) {
-        // Use already processed image from background service
-        logger.log("Step 1: Using pre-processed image from background service");
-        characterImage = service.getStatus().processedImage;
-
-        logger.log("Step 1 complete: Pre-processed image ready", {
-          imageLength: characterImage?.length,
-        });
-      } else if (processingStarted && !service.isDone()) {
-        // Processing started but not complete - wait for it
-        logger.log("Step 1: Background processing active, waiting", { state: serviceState });
-
-        try {
-          const status = await waitForProcessing(service);
-          characterImage = status.processedImage;
-
-          logger.log("Step 1 complete: Background processing finished", {
-            imageLength: characterImage?.length,
-          });
-        } catch (processingError) {
-          // Processing failed - use fallback image from service
-          logger.warn("Step 1: Background processing failed, using fallback", processingError.message);
-          characterImage = service.getStatus().processedImage;
-        }
-      } else if (processingStarted && service.isDone()) {
-        // Already done - use whatever result we have (could be fallback)
-        characterImage = service.getStatus().processedImage;
-
-        logger.log("Step 1: Using completed processing result", {
-          imageLength: characterImage?.length,
-          state: serviceState,
-        });
-      } else if (shouldSkipAPI && generationFormData.characterFile) {
-        // Dev mode: use local character file
-        logger.log("Step 1: Using local character file (dev mode - skipping API)", {
-          fileName: generationFormData.characterFile.name,
-          fileSize: `${(generationFormData.characterFile.size / 1024).toFixed(1)} KB`,
-          fileType: generationFormData.characterFile.type,
-        });
-
-        characterImage = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = () => reject(new Error("Failed to read character file"));
-          reader.readAsDataURL(generationFormData.characterFile);
-        });
-
-        logger.log("Step 1 complete: Character file loaded as data URL", {
-          dataUrlLength: characterImage.length,
-        });
-      }
-
-      // Fallback: call API directly if no processed image available
-      if (!characterImage) {
-        if (!navigator.onLine) {
-          throw new Error("No internet connection. Please check your network and try again.");
-        }
-
-        const apiFormData = new FormData();
-        apiFormData.append("photo", generationFormData.photo);
-
-        logger.log("Step 1: Calling backend API (fallback)", {
-          photoName: generationFormData.photo.name,
-          photoSize: `${(generationFormData.photo.size / 1024).toFixed(1)} KB`,
-          photoType: generationFormData.photo.type,
-        });
-
-        const startApiCall = performance.now();
-        const response = await fetchWithRetry(`${API_URL}/api/generate`, {
-          method: "POST",
-          body: apiFormData,
-        }, MAX_RETRIES, signal);
-
-        logger.log("Step 1 response received", {
-          status: response.status,
-          ok: response.ok,
-          duration: `${(performance.now() - startApiCall).toFixed(0)}ms`,
-        });
-
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          throw new Error('Server returned non-JSON response. Check API URL configuration.');
-        }
-        const result = await response.json();
-
-        if (!result.success) {
-          logger.error("Step 1 failed", result.error || "Generation failed");
-          throw new Error(result.error || "Generation failed");
-        }
-
-        logger.log("Step 1 complete: Backend returned success", {
-          hasCharacterImage: !!result.characterImage,
-          imageLength: result.characterImage?.length,
-          evaluationScore: result.evaluation?.score,
-          evaluationPassed: result.evaluation?.passed,
-        });
-
-        characterImage = result.characterImage;
-      }
-
-      // Step 2: Remove background (conditionally based on toggle)
-      // Note: Background removal is already done by the processing service, so skip if we used it
-      const usedProcessingService = service?.isImageReady() || (service && !service.isDone());
-      if (usedProcessingService) {
-        logger.log("Step 2: Skipping background removal (already done by processing service)");
-      } else if (generationFormData.skipBackgroundRemoval) {
-        logger.log("Step 2: Skipping background removal (dev mode toggle)");
-      } else {
-        logger.log("Step 2: Starting background removal");
-        const startBgRemoval = performance.now();
-
-        // Use improved background removal with server fallback - no silent failures
-        characterImage = await removeImageBackground(characterImage, API_URL);
-
-        logger.log("Step 2 complete: Background removal successful", {
-          outputLength: characterImage?.length,
-          duration: `${(performance.now() - startBgRemoval).toFixed(0)}ms`,
-        });
-      }
-
-      // Step 3: Video composition (conditionally based on toggle)
-      let videoBlob;
-
-      if (generationFormData.skipVideoGeneration) {
-        logger.log("Step 3: Skipping video generation (dev mode toggle)");
-
-        // Convert the character image to a blob for the result screen
-        // This allows previewing the image without video composition
-        // Use direct conversion instead of fetch() to avoid issues with data URLs
-        videoBlob = dataURLToBlob(characterImage);
-
-        logger.log("Step 3 complete: Using image directly (no video)", {
-          imageSize: `${(videoBlob?.size / 1024).toFixed(1)} KB`,
-        });
-      } else {
-        logger.log("Step 3: Starting video composition (server-side)", {
-          brideName: generationFormData.brideName,
-          groomName: generationFormData.groomName,
-          date: generationFormData.date,
-          venue: generationFormData.venue,
-          characterImageLength: characterImage?.length,
-        });
-
-        // Compose final invite as video with character overlay (always server-side)
-        const startVideoCompose = performance.now();
-        let lastLoggedProgress = 0;
-        videoBlob = await composeVideoInvite({
-          characterImage,
-          brideName: generationFormData.brideName,
-          groomName: generationFormData.groomName,
-          date: generationFormData.date,
-          time: generationFormData.time,
-          brideParents: generationFormData.brideParentName,
-          groomParents: generationFormData.groomParentName,
-          onProgress: (progress) => {
-            // Only log at key milestones (every 20%) to reduce noise
-            if (progress >= lastLoggedProgress + 20 || progress === 100) {
-              logger.log("Video composition progress", {
-                progress: `${progress}%`,
-                elapsed: `${(performance.now() - startVideoCompose).toFixed(0)}ms`
-              });
-              lastLoggedProgress = progress;
-            }
-          },
-        });
-
-        logger.log("Step 3 complete: Video composition finished", {
-          videoSize: `${(videoBlob?.size / 1024 / 1024).toFixed(2)} MB`,
-          duration: `${(performance.now() - startVideoCompose).toFixed(0)}ms`,
-        });
-      }
-
-      setFinalInvite(videoBlob);
-
-      // Increment rate limit counter (only for non-dev mode)
-      if (!generationFormData.devMode) {
-        const newLimit = incrementGenerationCount();
-        logger.log("Rate limit updated", {
-          count: newLimit.count,
-          remaining: newLimit.remaining,
-        });
-      }
-
-      logger.log("Step 4: Showing completion state");
-
-      // Jump progress to 100% and wait briefly before transitioning
-      setLoadingCompleted(true);
-      await new Promise((resolve) => setTimeout(resolve, COMPLETION_DELAY_MS));
-
-      logger.log("Step 5: Transitioning to result screen");
-      setScreen(SCREENS.RESULT);
-
-      // Track generation completed
-      trackClick('generation_completed', {
-        dev_mode: generationFormData.devMode,
-      });
-
-      logger.log("Generation complete - all steps successful");
-
-    } catch (err) {
-      // Don't show error for cancelled operations
-      if (err.name === 'AbortError') {
-        logger.log("Generation cancelled by user");
-        return;
-      }
-      logger.error("Generation failed", err);
-      trackClick('generation_failed', {
-        error_message: err.message,
-        error_type: err.name || 'unknown',
-      });
-      setError(err.message);
-      setScreen(SCREENS.INPUT);
-    }
-  }, []);
-
-  const handleCancel = useCallback(() => {
-    // Abort any ongoing API requests
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-
-    logger.log("User cancelled generation");
-
-    // Track cancellation
-    trackClick('generation_cancelled');
-
-    // Reset state and go back to input screen
-    setScreen(SCREENS.INPUT);
-    setFormData(null);
-    setFinalInvite(null);
-    setLoadingCompleted(false);
-    setError(null);
-  }, []);
-
-  const handleReset = useCallback(() => {
-    // Reset processing state
-    if (processingServiceRef.current) {
-      processingServiceRef.current.cancel();
-    }
-    resetImageProcessingService();
-    processingServiceRef.current = null;
-
-    // Reset all state and go back to sample video
-    setScreen(SCREENS.SAMPLE_VIDEO);
-    setFormData(null);
-    setFinalInvite(null);
-    setUploadedPhoto(null);
-    setProcessingStatus({ state: 'idle' });
-    setError(null);
-  }, []);
-
-  // Handle back button navigation
-  const handleBack = useCallback(() => {
-    logger.log("Back button clicked", { currentScreen: screen });
-
-    if (screen === SCREENS.PHOTO_UPLOAD) {
-      // Go back to sample video
-      setScreen(SCREENS.SAMPLE_VIDEO);
-    } else if (screen === SCREENS.INPUT) {
-      // Go back to photo upload
-      setScreen(SCREENS.PHOTO_UPLOAD);
-    } else if (screen === SCREENS.RESULT) {
-      // Go back to input form
-      setScreen(SCREENS.INPUT);
-    }
-  }, [screen]);
-
-  // Loading fallback for lazy-loaded components
-  const LoadingFallback = () => (
-    <div className="loading-fallback">
-      <div className="loading-spinner" />
-    </div>
-  );
-
   return (
-    <div className="app">
-      {/* Offline banner */}
-      {!isOnline && (
-        <div className="offline-banner">
-          You are offline. Some features may not work.
-        </div>
-      )}
-      
-      {/* App Header - Logo and Sound Button aligned at top */}
-      <header className="app-header">
-        <div className="app-header-left">
-          <div className="app-header-logo">
-            <img
-              src="/assets/app-logo.png"
-              alt="मारवाड़ी विवाह"
-              className="app-header-logo-img"
-            />
-          </div>
-        </div>
-        <div className="app-header-title">
-          <h1>मारवाड़ी विवाह</h1>
-          <p>मारवाड़ी कूकू पत्रिका बनाएं</p>
-        </div>
-        <div className="app-header-actions">
-          {/* Show music toggle only on loading screen */}
-          {screen === SCREENS.LOADING && (
-            <button
-              className="music-toggle-btn"
-              onClick={toggleMusic}
-              aria-label={isMusicPlaying ? "Mute background music" : "Play background music"}
-              title={isMusicPlaying ? "Mute music" : "Play music"}
-            >
-              {isMusicPlaying ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
-            </button>
-          )}
-        </div>
+    <>
+      <header className="site-header">
+        <a className="brand" href="#top" aria-label="Home">
+          <span className="brand-mark">SJ</span>
+          <span>Make Systems</span>
+        </a>
+        <nav className="nav-links" aria-label="Primary navigation">
+          <a href="#services">Services</a>
+          <a href="#proof">Proof</a>
+          <a href="#process">Process</a>
+          <a href="#contact">Contact</a>
+        </nav>
+        <a className="header-cta" href="#contact">Book a build</a>
       </header>
 
-      {/* Sample Video Screen */}
-      {screen === SCREENS.SAMPLE_VIDEO && (
-        <SampleVideoScreen onProceed={handleSampleVideoComplete} />
-      )}
+      <main id="top">
+        <section className="hero">
+          <div className="hero-copy">
+            <p className="eyebrow">Make.com automation specialist for sales teams</p>
+            <h1>End-to-end sales automations that close deals while you sleep.</h1>
+            <p className="hero-text">
+              I build Make.com and GoHighLevel systems that catch every lead, follow up instantly,
+              route work cleanly, and turn messy sales operations into reliable pipelines your team
+              can actually maintain.
+            </p>
+            <div className="hero-actions">
+              <a className="button primary" href="#contact">Plan my automation</a>
+              <a className="button secondary" href="#services">See what I build</a>
+            </div>
+            <dl className="hero-stats" aria-label="Client outcomes">
+              <div>
+                <dt>14 to 3 days</dt>
+                <dd>sales cycle reduced</dd>
+              </div>
+              <div>
+                <dt>20%</dt>
+                <dd>missed-call leads recovered</dd>
+              </div>
+              <div>
+                <dt>200%</dt>
+                <dd>support capacity increase</dd>
+              </div>
+            </dl>
+          </div>
 
-      {/* Photo Upload Screen */}
-      {screen === SCREENS.PHOTO_UPLOAD && (
-        <PhotoUploadScreen
-          onPhotoSelected={handlePhotoSelected}
-          apiUrl={API_URL}
-        />
-      )}
+          <div className="hero-visual" aria-label="Make.com automation workflow preview">
+            <img
+              src="/assets/make-automation-workflow.svg"
+              alt="Workflow showing leads moving through Make.com to GHL, CRM, invoices, and follow-up"
+            />
+          </div>
+        </section>
 
-      {/* Input Form Screen */}
-      {screen === SCREENS.INPUT && (
-        <InputScreen
-          onGenerate={handleGenerate}
-          error={error}
-          photo={uploadedPhoto}
-          onBack={() => setScreen(SCREENS.PHOTO_UPLOAD)}
-        />
-      )}
+        <section className="logo-strip" aria-label="Automation platforms">
+          <span>Make.com</span>
+          <span>GoHighLevel</span>
+          <span>Airtable</span>
+          <span>Monday.com</span>
+          <span>Xero</span>
+          <span>Zapier</span>
+        </section>
 
-      {/* Loading Screen */}
-      {screen === SCREENS.LOADING && (
-        <LoadingScreen completed={loadingCompleted} onCancel={handleCancel} />
-      )}
+        <section id="services" className="section">
+          <div className="section-heading">
+            <p className="eyebrow">What I automate</p>
+            <h2>Make.com scenarios built for real-world sales ops.</h2>
+            <p>
+              Clean pipelines, fast response times, and edge cases handled before they become lost
+              revenue.
+            </p>
+          </div>
 
-      {/* Result Screen (lazy loaded) */}
-      <Suspense fallback={<LoadingFallback />}>
-        {screen === SCREENS.RESULT && (
-          <ResultScreen
-            inviteVideo={finalInvite}
-            brideName={formData?.brideName}
-            groomName={formData?.groomName}
-            venue={formData?.venue}
-            onReset={handleReset}
-          />
-        )}
-      </Suspense>
-    </div>
+          <div className="service-grid">
+            {services.map((service) => (
+              <article className="service-card" key={service.title}>
+                <span className="card-number">{service.number}</span>
+                <h3>{service.title}</h3>
+                <p>{service.text}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="proof" className="proof-section">
+          <div className="proof-copy">
+            <p className="eyebrow">Why clients hire me</p>
+            <h2>Not just happy-path automation.</h2>
+            <p>
+              Businesses rarely lose deals because the lead was bad. They lose them through slow
+              follow-up, broken handoffs, duplicate records, missing alerts, and manual steps that
+              quietly stack up.
+            </p>
+            <p>
+              I design Make.com workflows around those rough edges: retries, fallbacks, logging,
+              ownership rules, naming conventions, and simple documentation so the system can be
+              maintained after launch.
+            </p>
+          </div>
+          <div className="proof-list">
+            <div>
+              <strong>Built for messy inputs</strong>
+              <span>Bad phone formats, duplicate contacts, blank fields, late webhooks.</span>
+            </div>
+            <div>
+              <strong>Built for sales speed</strong>
+              <span>Instant routing, nudges, reminders, and recovery loops.</span>
+            </div>
+            <div>
+              <strong>Built to maintain</strong>
+              <span>Clear scenario names, notes, test paths, and failure alerts.</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="section packages-section">
+          <div className="section-heading">
+            <p className="eyebrow">Engagements</p>
+            <h2>Choose the level of Make.com help you need.</h2>
+          </div>
+
+          <div className="package-grid">
+            {packages.map((item) => (
+              <article className={item.featured ? "package featured" : "package"} key={item.title}>
+                {item.featured && <div className="badge">Most requested</div>}
+                <h3>{item.title}</h3>
+                <p>{item.text}</p>
+                <ul>
+                  {item.bullets.map((bullet) => (
+                    <li key={bullet}>{bullet}</li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="process" className="process-section">
+          <div className="section-heading">
+            <p className="eyebrow">How it works</p>
+            <h2>A practical build process without automation theater.</h2>
+          </div>
+          <div className="timeline">
+            {process.map(([title, text], index) => (
+              <div key={title}>
+                <span>{index + 1}</span>
+                <h3>{title}</h3>
+                <p>{text}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="contact" className="contact-section">
+          <div>
+            <p className="eyebrow">Ready to stop losing warm leads?</p>
+            <h2>
+              Send me your current sales flow. I will show you what Make.com should automate first.
+            </h2>
+          </div>
+          <div className="contact-panel">
+            <a
+              className="button primary full"
+              href="mailto:hello@vivahapp.shop?subject=Make.com%20automation%20build%20request"
+            >
+              Email project brief
+            </a>
+            <p>
+              Include your tools, lead sources, current bottleneck, and the first workflow you want
+              off your team&apos;s plate.
+            </p>
+          </div>
+        </section>
+      </main>
+
+      <footer className="site-footer">
+        <span>Shubham Jain - Mumbai, India</span>
+        <span>Make.com - GoHighLevel - Sales automation</span>
+      </footer>
+    </>
   );
 }

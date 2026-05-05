@@ -48,13 +48,13 @@ export default defineConfig(({ mode }) => ({
         navigateFallbackDenylist: [/^\/api\//],
       },
       manifest: {
-        name: "Wedding Invite Generator",
-        short_name: "WedInvite",
-        description: "Generate beautiful Marwadi wedding invitations",
-        theme_color: "#8B0000",
-        background_color: "#FFF8DC",
+        name: "Make.com Sales Automation",
+        short_name: "Make Systems",
+        description: "Make.com automation services for sales teams",
+        theme_color: "#111318",
+        background_color: "#F6F7F3",
         display: "standalone",
-        orientation: "portrait",
+        orientation: "any",
         icons: [
           {
             src: "/assets/icon-192.png",
